@@ -1,0 +1,3 @@
+<launch>
+    <node pkg="path_to_mavros" type="path_to_mavros_node" respawn="false" name="path_to_mavros" output="screen"/>
+</launch>
