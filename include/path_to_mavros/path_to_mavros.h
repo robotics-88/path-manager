@@ -29,8 +29,14 @@ class PathToMavros {
 
         double default_speed_;
         bool position_received_;
+        bool goal_received_;
         geometry_msgs::PoseStamped last_pos_;
         geometry_msgs::PoseStamped curr_pos_;
+
+        double cmdloop_dt_;
+        ros::Timer cmdloop_timer_;
+        ros::CallbackQueue cmdloop_queue_;
+        std::unique_ptr<ros::AsyncSpinner> cmdloop_spinner_;
 
         nav_msgs::Path actual_path_;
         geometry_msgs::PoseStamped current_goal_;

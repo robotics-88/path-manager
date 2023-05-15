@@ -26,6 +26,8 @@ PathToMavros::PathToMavros(ros::NodeHandle& node)
   , nh_(node)
   , default_speed_(2.0)
   , position_received_(false)
+  , goal_received_(false)
+  , cmdloop_dt_(0.1)
   , path_topic_("/search_node/trajectory_position")
   , frame_id_("map")
 {
@@ -36,13 +38,12 @@ PathToMavros::PathToMavros(ros::NodeHandle& node)
   mavros_waypoint_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("mavros/setpoint_position/local", 10);
   actual_path_pub_ = nh_.advertise<nav_msgs::Path>("actual_path", 10);
 
-  //TODO Fill in cmd loop timer for setpoint
-//   ros::TimerOptions cmdlooptimer_options(ros::Duration(cmdloop_dt_),
-//                                          boost::bind(&GlobalPlannerNode::cmdLoopCallback, this, _1), &cmdloop_queue_);
-//   cmdloop_timer_ = nh_.createTimer(cmdlooptimer_options);
+  ros::TimerOptions cmdlooptimer_options(ros::Duration(cmdloop_dt_),
+                                         boost::bind(&PathToMavros::cmdLoopCallback, this, _1), &cmdloop_queue_);
+  cmdloop_timer_ = nh_.createTimer(cmdlooptimer_options);
 
-//   cmdloop_spinner_.reset(new ros::AsyncSpinner(1, &cmdloop_queue_));
-//   cmdloop_spinner_->start();
+  cmdloop_spinner_.reset(new ros::AsyncSpinner(1, &cmdloop_queue_));
+  cmdloop_spinner_->start();
 }
 
 // Sets the current position and checks if the current goal has been reached
@@ -61,6 +62,9 @@ void PathToMavros::positionCallback(const geometry_msgs::PoseStamped& msg) {
 //   }
 
   position_received_ = true;
+  if (path_.size() == 0) {
+    goal_received_ = false;
+  }
 
   // Check if we are close enough to current goal to get the next part of the
   // path
@@ -90,6 +94,7 @@ void PathToMavros::setCurrentPath(const nav_msgs::Path::ConstPtr &path) {
     ROS_INFO("  Received empty path\n");
     return;
   }
+  goal_received_ = true;
   last_goal_ = poses[0];
   current_goal_ = poses[1];
 
@@ -111,10 +116,11 @@ void PathToMavros::setPose(const geometry_msgs::PoseStamped& new_pose) {
 }
 
 void PathToMavros::cmdLoopCallback(const ros::TimerEvent& event) {
+    if (!goal_received_) return;
 //   hover_ = false;
 
   // Check if all information was received
-  ros::Time now = ros::Time::now();
+//   ros::Time now = ros::Time::now();
 
 //   ros::Duration since_last_cloud = now - last_wp_time_;
 //   ros::Duration since_start = now - start_time_;
@@ -126,6 +132,7 @@ void PathToMavros::cmdLoopCallback(const ros::TimerEvent& event) {
 void PathToMavros::publishSetpoint() {
   // Vector pointing from current position to the current goal
   tf::Vector3 vec = toTfVector3(subtractPoints(current_goal_.pose.position, last_pos_.pose.position));
+  // TODO add a version of this commented section back later, adjust speed based on risk
 //   if (global_planner_.use_speedup_heuristics_) {
 //     Cell cur_cell =
 //         global_planner::Cell(last_pos_.pose.position.x, last_pos_.pose.position.y, last_pos_.pose.position.z);
@@ -151,6 +158,14 @@ void PathToMavros::publishSetpoint() {
   setpoint.pose.position.x = last_pos_.pose.position.x + vec.getX();
   setpoint.pose.position.y = last_pos_.pose.position.y + vec.getY();
   setpoint.pose.position.z = last_pos_.pose.position.z + vec.getZ();
+  geometry_msgs::Quaternion quat = setpoint.pose.orientation;
+  tf::Quaternion tf_quat;
+  tf::quaternionMsgToTF(quat, tf_quat);
+  tf_quat.normalize();
+  setpoint.pose.orientation.x = tf_quat.getX();
+  setpoint.pose.orientation.y = tf_quat.getY();
+  setpoint.pose.orientation.z = tf_quat.getZ();
+  setpoint.pose.orientation.w = tf_quat.getW();
 
 //   // Publish setpoint for vizualization
 //   current_waypoint_publisher_.publish(setpoint);
