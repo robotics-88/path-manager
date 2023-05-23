@@ -31,6 +31,9 @@ PathToMavros::PathToMavros(ros::NodeHandle& node)
   , path_topic_("/search_node/trajectory_position")
   , frame_id_("map")
 {
+  ros::NodeHandle private_nh("~");
+
+  private_nh.param<double>("default_speed", default_speed_, default_speed_);
     
   position_sub_ = nh_.subscribe("mavros/local_position/pose", 1, &PathToMavros::positionCallback, this);
   path_sub_ = nh_.subscribe(path_topic_, 1, &PathToMavros::setCurrentPath, this);
