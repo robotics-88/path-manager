@@ -24,7 +24,9 @@ inline double distance(const geometry_msgs::PoseStamped& a, const geometry_msgs:
 PathToMavros::PathToMavros(ros::NodeHandle& node)
   : private_nh_("~")
   , nh_(node)
+  , tf_listener_(tf_buffer_)
   , default_speed_(2.0)
+  , acceptance_radius_(0.5)
   , position_received_(false)
   , goal_received_(false)
   , cmdloop_dt_(0.1)
@@ -34,6 +36,10 @@ PathToMavros::PathToMavros(ros::NodeHandle& node)
   ros::NodeHandle private_nh("~");
 
   private_nh.param<double>("default_speed", default_speed_, default_speed_);
+  private_nh.param<double>("acceptance_radius", acceptance_radius_, acceptance_radius_);
+
+  private_nh.param<std::string>("slam_map_frame", slam_map_frame_, "slam_map");
+  private_nh.param<std::string>("mavros_map_frame", mavros_map_frame_, "map");
     
   position_sub_ = nh_.subscribe("mavros/local_position/pose", 1, &PathToMavros::positionCallback, this);
   path_sub_ = nh_.subscribe(path_topic_, 1, &PathToMavros::setCurrentPath, this);
@@ -94,16 +100,29 @@ void PathToMavros::setCurrentPath(const nav_msgs::Path::ConstPtr &path) {
   path_.clear();
 
   if (poses.size() < 2) {
-    ROS_INFO("  Received empty path\n");
+    ROS_WARN("Received empty path\n");
     return;
   }
   goal_received_ = true;
-  last_goal_ = poses[0];
-  current_goal_ = poses[1];
 
-  for (int i = 2; i < poses.size(); ++i) {
-    path_.push_back(poses[i]);
+  for (int i = 0; i < poses.size(); ++i) {
+    
+    // Convert path from slam map frame to mavros map frame
+    geometry_msgs::PoseStamped pose_transformed;
+
+    std::string tf_error;
+    if (tf_buffer_.canTransform(mavros_map_frame_, slam_map_frame_, ros::Time(0), &tf_error)) {
+      tf_buffer_.transform(poses[i], pose_transformed, mavros_map_frame_);
+    }
+    else {
+      ROS_WARN("TF error for slam pose: %s", tf_error.c_str());
+    }
+
+    path_.push_back(pose_transformed);
   }
+
+  last_goal_ = path_[0];
+  current_goal_ = path_[1];
 }
 
 // Updates the current pose /and keeps track of the path back
@@ -133,8 +152,14 @@ void PathToMavros::cmdLoopCallback(const ros::TimerEvent& event) {
 }
 
 void PathToMavros::publishSetpoint() {
+
+
+  //  Goal positions are in slam_map_frame, need to convert to mavros map frame
+
   // Vector pointing from current position to the current goal
   tf::Vector3 vec = toTfVector3(subtractPoints(current_goal_.pose.position, last_pos_.pose.position));
+
+  // std::cout << "Vec: " << vec[0] << ", " << vec[1] << ", " << vec[2] << std::endl;
   // TODO add a version of this commented section back later, adjust speed based on risk
 //   if (global_planner_.use_speedup_heuristics_) {
 //     Cell cur_cell =
@@ -158,9 +183,14 @@ void PathToMavros::publishSetpoint() {
   vec *= new_len;
 
   auto setpoint = current_goal_;  // The intermediate position sent to Mavros
-  setpoint.pose.position.x = last_pos_.pose.position.x + vec.getX();
+
+  setpoint.header.stamp = ros::Time::now();
+
+  // TODO: Better setpoint handling here
+  setpoint.pose.position = current_goal_.pose.position;
+  /* setpoint.pose.position.x = last_pos_.pose.position.x + vec.getX();
   setpoint.pose.position.y = last_pos_.pose.position.y + vec.getY();
-  setpoint.pose.position.z = last_pos_.pose.position.z + vec.getZ();
+  setpoint.pose.position.z = last_pos_.pose.position.z + vec.getZ(); */
   geometry_msgs::Quaternion quat = setpoint.pose.orientation;
   tf::Quaternion tf_quat;
   tf::quaternionMsgToTF(quat, tf_quat);
@@ -177,6 +207,6 @@ void PathToMavros::publishSetpoint() {
   mavros_waypoint_publisher_.publish(setpoint);
 }
 
-bool PathToMavros::isCloseToGoal() { return distance(current_goal_, last_pos_) < default_speed_; }
+bool PathToMavros::isCloseToGoal() { return distance(current_goal_, last_pos_) < acceptance_radius_; }
 
 }

@@ -11,6 +11,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <geometry_msgs/PoseStamped.h>
 #include <nav_msgs/Path.h>
 #include <tf/transform_listener.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 namespace path_to_mavros {
 /**
@@ -27,7 +29,14 @@ class PathToMavros {
         ros::NodeHandle private_nh_;
         ros::NodeHandle nh_;
 
+        tf2_ros::Buffer tf_buffer_;
+        tf2_ros::TransformListener tf_listener_;
+
+        std::string slam_map_frame_;
+        std::string mavros_map_frame_;
+
         double default_speed_;
+        double acceptance_radius_;
         bool position_received_;
         bool goal_received_;
         geometry_msgs::PoseStamped last_pos_;
