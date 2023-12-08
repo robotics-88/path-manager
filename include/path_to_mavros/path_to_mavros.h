@@ -35,21 +35,13 @@ class PathToMavros {
         std::string slam_map_frame_;
         std::string mavros_map_frame_;
 
-        double default_speed_;
         double acceptance_radius_;
         bool position_received_;
         bool goal_received_;
         geometry_msgs::PoseStamped last_pos_;
-        geometry_msgs::PoseStamped curr_pos_;
-
-        double cmdloop_dt_;
-        ros::Timer cmdloop_timer_;
-        ros::CallbackQueue cmdloop_queue_;
-        std::unique_ptr<ros::AsyncSpinner> cmdloop_spinner_;
 
         nav_msgs::Path actual_path_;
         geometry_msgs::PoseStamped current_goal_;
-        double curr_yaw_;
         geometry_msgs::PoseStamped last_goal_;
         std::vector<geometry_msgs::PoseStamped> path_;
 
@@ -65,7 +57,6 @@ class PathToMavros {
         void positionCallback(const geometry_msgs::PoseStamped& msg);
         void setCurrentPath(const nav_msgs::Path::ConstPtr &path);
         void setPose(const geometry_msgs::PoseStamped& new_pose);
-        void cmdLoopCallback(const ros::TimerEvent& event);
         void publishSetpoint();
         bool isCloseToGoal();
 };
