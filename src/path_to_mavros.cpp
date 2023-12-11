@@ -116,7 +116,7 @@ void PathToMavros::publishSetpoint() {
   auto direction_vec = subtractPoints(current_goal_.pose.position, last_pos_.pose.position);
   double yaw = atan2(direction_vec.y, direction_vec.x);
   tf2::Quaternion setpoint_q;
-  setpoint_q.setEuler(yaw, 0.0, 0.0);
+  setpoint_q.setRPY(0.0, 0.0, yaw);
 
   // Fill setpoint pose and orientation
   setpoint.header.stamp = ros::Time::now();
