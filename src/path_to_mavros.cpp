@@ -112,19 +112,17 @@ void PathToMavros::publishSetpoint() {
 
   auto setpoint = current_goal_;  // The intermediate position sent to Mavros
 
+  // Calculate orientation to point vehilce towards goal
+  auto direction_vec = subtractPoints(current_goal_.pose.position, last_pos_.pose.position);
+  double yaw = atan2(direction_vec.y, direction_vec.x);
+  tf2::Quaternion setpoint_q;
+  setpoint_q.setEuler(yaw, 0.0, 0.0);
+
+  // Fill setpoint pose and orientation
   setpoint.header.stamp = ros::Time::now();
   setpoint.header.frame_id = mavros_map_frame_;
-
   setpoint.pose = current_goal_.pose;
-
-  geometry_msgs::Quaternion quat = setpoint.pose.orientation;
-  tf::Quaternion tf_quat;
-  tf::quaternionMsgToTF(quat, tf_quat);
-  tf_quat.normalize();
-  setpoint.pose.orientation.x = tf_quat.getX();
-  setpoint.pose.orientation.y = tf_quat.getY();
-  setpoint.pose.orientation.z = tf_quat.getZ();
-  setpoint.pose.orientation.w = tf_quat.getW();
+  tf2::convert(setpoint_q, setpoint.pose.orientation);
 
 //   // Publish setpoint for vizualization
 //   current_waypoint_publisher_.publish(setpoint);
