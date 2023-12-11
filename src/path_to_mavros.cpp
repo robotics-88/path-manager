@@ -85,15 +85,18 @@ void PathToMavros::setCurrentPath(const nav_msgs::Path::ConstPtr &path) {
   goal_received_ = true;
 
   // Convert path from slam map frame to mavros map frame
+  geometry_msgs::TransformStamped transform_slam2mavros;
+  std::string transform_error;
+  try{
+    transform_slam2mavros = tf_buffer_.lookupTransform(mavros_map_frame_, slam_map_frame_, path->header.stamp);
+  }
+  catch (tf2::TransformException &ex) {
+    ROS_WARN("%s",ex.what());
+    return;
+  }
   for (int i = 0; i < poses.size(); ++i) {
     geometry_msgs::PoseStamped pose_transformed;
-    std::string tf_error;
-    if (tf_buffer_.canTransform(mavros_map_frame_, slam_map_frame_, ros::Time::now(), &tf_error)) {
-      tf_buffer_.transform(poses[i], pose_transformed, mavros_map_frame_, ros::Time::now(), slam_map_frame_);
-    }
-    else {
-      ROS_WARN("TF error for slam pose: %s", tf_error.c_str());
-    }
+    tf2::doTransform(poses[i], pose_transformed, transform_slam2mavros);
     
     path_.push_back(pose_transformed);
   }
