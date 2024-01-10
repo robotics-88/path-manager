@@ -104,6 +104,11 @@ void PathToMavros::setCurrentPath(const nav_msgs::Path::ConstPtr &path) {
   last_goal_ = path_[0];
   current_goal_ = path_[1];
 
+  // Calculate orientation to point vehicle towards final destination
+  geometry_msgs::PoseStamped final_goal = path_.back();
+  auto direction_vec = subtractPoints(final_goal.pose.position, last_pos_.pose.position);
+  yaw_target_ = atan2(direction_vec.y, direction_vec.x);
+
   // Publish first setpoint
   publishSetpoint();
 }
@@ -112,16 +117,16 @@ void PathToMavros::publishSetpoint() {
 
   auto setpoint = current_goal_;  // The intermediate position sent to Mavros
 
-  // Calculate orientation to point vehilce towards goal
-  auto direction_vec = subtractPoints(current_goal_.pose.position, last_pos_.pose.position);
-  double yaw = atan2(direction_vec.y, direction_vec.x);
-  tf2::Quaternion setpoint_q;
-  setpoint_q.setRPY(0.0, 0.0, yaw);
 
-  // Fill setpoint pose and orientation
+  
+
+  // Fill setpoint data
   setpoint.header.stamp = ros::Time::now();
   setpoint.header.frame_id = mavros_map_frame_;
   setpoint.pose = current_goal_.pose;
+
+  tf2::Quaternion setpoint_q;
+  setpoint_q.setRPY(0.0, 0.0, yaw_target_);
   tf2::convert(setpoint_q, setpoint.pose.orientation);
 
 //   // Publish setpoint for vizualization

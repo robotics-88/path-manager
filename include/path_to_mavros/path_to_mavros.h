@@ -45,6 +45,8 @@ class PathToMavros {
         geometry_msgs::PoseStamped last_goal_;
         std::vector<geometry_msgs::PoseStamped> path_;
 
+        double yaw_target_;
+
         std::string path_topic_;
         std::string frame_id_;
 
