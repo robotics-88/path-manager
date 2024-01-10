@@ -48,14 +48,9 @@ void PathToMavros::positionCallback(const geometry_msgs::PoseStamped& msg) {
   // Update position
   last_pos_ = msg;
 
-  // Check if a new goal is needed
-//   if (num_pos_msg_++ % 10 == 0) {
-    // Keep track of and publish the actual travel trajectory
-    // ROS_INFO("Travelled path extended");
-    last_pos_.header.frame_id = mavros_map_frame_;
-    actual_path_.poses.push_back(last_pos_);
-    actual_path_pub_.publish(actual_path_);
-//   }
+  last_pos_.header.frame_id = mavros_map_frame_;
+  actual_path_.poses.push_back(last_pos_);
+  actual_path_pub_.publish(actual_path_);
 
   if (path_.size() == 0) {
     goal_received_ = false;
@@ -117,9 +112,6 @@ void PathToMavros::publishSetpoint() {
 
   auto setpoint = current_goal_;  // The intermediate position sent to Mavros
 
-
-  
-
   // Fill setpoint data
   setpoint.header.stamp = ros::Time::now();
   setpoint.header.frame_id = mavros_map_frame_;
@@ -129,19 +121,12 @@ void PathToMavros::publishSetpoint() {
   setpoint_q.setRPY(0.0, 0.0, yaw_target_);
   tf2::convert(setpoint_q, setpoint.pose.orientation);
 
-//   // Publish setpoint for vizualization
-//   current_waypoint_publisher_.publish(setpoint);
-
   // Publish setpoint to Mavros
   mavros_waypoint_publisher_.publish(setpoint);
 }
 
-// We are considered 'close to goal' when we are closer to the next point than the last point, 
-// but with a certain maximum distance of 'acceptance_radius_'
 bool PathToMavros::isCloseToGoal() { 
-  double dist_to_next_point = distance(last_pos_, current_goal_);
-  
-  return dist_to_next_point < acceptance_radius_;
+  return distance(last_pos_, current_goal_) < acceptance_radius_;
 }
 
 } // namespace path_to_mavros
