@@ -57,13 +57,11 @@ void PathToMavros::positionCallback(const geometry_msgs::PoseStamped& msg) {
   }
 
   // Check if we are close enough to current goal to get the next part of the
-  // path
-  if (path_.size() > 0 && isCloseToGoal()) {
-
+  // path. Do as a while loop so that we publish the furthest setpoint that is still within the acceptance radius
+  while (path_.size() > 0 && isCloseToGoal()) {
     last_goal_ = current_goal_;
     current_goal_ = path_[0];
     path_.erase(path_.begin());
-
     publishSetpoint();
   }
 }
@@ -125,7 +123,7 @@ void PathToMavros::publishSetpoint() {
   mavros_waypoint_publisher_.publish(setpoint);
 }
 
-bool PathToMavros::isCloseToGoal() { 
+bool PathToMavros::isCloseToGoal() {
   return distance(last_pos_, current_goal_) < acceptance_radius_;
 }
 

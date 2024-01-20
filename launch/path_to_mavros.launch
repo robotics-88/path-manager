@@ -1,9 +1,11 @@
 <launch>
     <arg name="slam_map_frame" default="slam_map"/>
     <arg name="mavros_map_frame" default="map"/>
+    <arg name="acceptance_radius" default="2.0"/>
 
     <node pkg="path_to_mavros" type="path_to_mavros_node" respawn="false" name="path_to_mavros" output="screen">
         <param name="slam_map_frame" value="$(arg slam_map_frame)"/>
         <param name="mavros_map_frame" value="$(arg mavros_map_frame)"/>
+        <param name="acceptance_radius" value="$(arg acceptance_radius)"/>
     </node>
 </launch>
