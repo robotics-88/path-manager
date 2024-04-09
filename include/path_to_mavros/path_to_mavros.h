@@ -32,7 +32,6 @@ class PathToMavros {
         tf2_ros::Buffer tf_buffer_;
         tf2_ros::TransformListener tf_listener_;
 
-        std::string slam_map_frame_;
         std::string mavros_map_frame_;
 
         double acceptance_radius_;
