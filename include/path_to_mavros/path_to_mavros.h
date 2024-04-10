@@ -14,6 +14,9 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <tf/transform_listener.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <livox_ros_driver/CustomMsg.h>
+#include <pcl_ros/point_cloud.h>
+
 
 namespace path_to_mavros {
 /**
@@ -41,7 +44,7 @@ class PathToMavros {
         bool position_received_;
         bool goal_received_;
         geometry_msgs::PoseStamped last_pos_;
-        sensor_msgs::PointCloud2 last_pointcloud_;
+        pcl::PointCloud<pcl::PointXYZ> last_cloud_;
 
         nav_msgs::Path actual_path_;
         geometry_msgs::PoseStamped current_goal_;
@@ -62,6 +65,7 @@ class PathToMavros {
 
         void positionCallback(const geometry_msgs::PoseStamped& msg);
         void pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &msg);
+        void livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
         void setCurrentPath(const nav_msgs::Path::ConstPtr &path);
         void setPose(const geometry_msgs::PoseStamped& new_pose);
         void publishSetpoint();

@@ -4,12 +4,14 @@
     <arg name="acceptance_radius" default="2.0"/>
     <arg name="obstacle_dist_threshold" default="2.0"/>
     <arg name="cloud_topic" default="/livox/lidar"/>
+    <arg name="lidar_type" default="4"/>
 
     <node pkg="path_to_mavros" type="path_to_mavros_node" respawn="false" name="path_to_mavros" output="screen">
         <param name="slam_map_frame" value="$(arg slam_map_frame)"/>
         <param name="mavros_map_frame" value="$(arg mavros_map_frame)"/>
         <param name="acceptance_radius" value="$(arg acceptance_radius)"/>
-        <param name="obstacle_dist_threshold" value="$(arg obstacle_dist_threshold)"/>
+        <param name="obstacle_dist_threshold" value="3.5"/>
         <param name="cloud_topic" value="$(arg cloud_topic)"/>
+        <param name="lidar_type" value="$(arg lidar_type)"/>
     </node>
 </launch>

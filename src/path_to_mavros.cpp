@@ -8,7 +8,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include <geometry_msgs/PolygonStamped.h>
 #include <geometry_msgs/PoseStamped.h>
-#include <pcl_ros/point_cloud.h>
 #include "pcl_ros/transforms.h"
 
 namespace path_to_mavros
@@ -40,13 +39,19 @@ PathToMavros::PathToMavros(ros::NodeHandle& node)
   private_nh.param<std::string>("slam_map_frame", slam_map_frame_, "slam_map");
   private_nh.param<std::string>("mavros_map_frame", mavros_map_frame_, "map");
 
+  int lidar_type; // 4 is Mid360, 2 is Velodyne (or sim)
+  private_nh.param<int>("lidar_type", lidar_type, 4);
+
   std::string cloud_topic;
   private_nh.param<std::string>("cloud_topic", cloud_topic, "/livox/lidar");
   
   // Subscribers
   position_sub_ = nh_.subscribe("mavros/local_position/pose", 1, &PathToMavros::positionCallback, this);
   path_sub_ = nh_.subscribe(path_topic_, 1, &PathToMavros::setCurrentPath, this);
-  pointcloud_sub_ = nh_.subscribe(cloud_topic, 1, &PathToMavros::pointCloudCallback, this);
+
+  pointcloud_sub_ = lidar_type == 4 ? \
+        nh_.subscribe(cloud_topic, 1, &PathToMavros::livoxPointCloudCallback, this) : \
+        nh_.subscribe(cloud_topic, 1, &PathToMavros::pointCloudCallback, this);
 
   // Publishers
   mavros_waypoint_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("mavros/setpoint_position/local", 10);
@@ -77,7 +82,28 @@ void PathToMavros::positionCallback(const geometry_msgs::PoseStamped& msg) {
 }
 
 void PathToMavros::pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &msg) {
-  last_pointcloud_ = *msg;
+  pcl::fromROSMsg(*msg, last_cloud_);
+}
+
+void PathToMavros::livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg) {
+
+  last_cloud_.header.frame_id = msg->header.frame_id;
+  last_cloud_.header.stamp = msg->header.stamp.toNSec() / 1000; // PCL type stamp is in microseconds
+  
+  last_cloud_.clear();
+  int plsize = msg->point_num;
+  last_cloud_.reserve(plsize);
+
+  for (int i = 0; i < plsize; i++) {
+    pcl::PointXYZ added_point;
+
+    added_point.x = msg->points[i].x;
+    added_point.y = msg->points[i].y;
+    added_point.z = msg->points[i].z;
+
+    last_cloud_.points.push_back(added_point);
+
+  }
 }
 
 void PathToMavros::setCurrentPath(const nav_msgs::Path::ConstPtr &path) {
@@ -146,19 +172,17 @@ bool PathToMavros::isCloseToGoal() {
 void PathToMavros::ensureSetpointSafety() {
 
   // Convert last PCL to mavros frame
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>());
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_map(new pcl::PointCloud<pcl::PointXYZ>());
-  pcl::fromROSMsg(last_pointcloud_, *cloud);
 
   geometry_msgs::TransformStamped pcl_map_tf;
-    try {
-        pcl_map_tf = tf_buffer_.lookupTransform(mavros_map_frame_, last_pointcloud_.header.frame_id, ros::Time(0));
-    }
-    catch (tf2::TransformException &ex) {
-        ROS_WARN("%s",ex.what());
-        return;
-    }
-    pcl_ros::transformPointCloud(*cloud, *cloud_map, pcl_map_tf.transform);
+  try {
+    pcl_map_tf = tf_buffer_.lookupTransform(mavros_map_frame_, last_cloud_.header.frame_id, ros::Time(0));
+  }
+  catch (tf2::TransformException &ex) {
+    ROS_WARN("%s",ex.what());
+    return;
+  }
+  pcl_ros::transformPointCloud(last_cloud_, *cloud_map, pcl_map_tf.transform);
 
   // Check PCL points for proximity to goal point, and find closest point in PCL to goal point.
   float closest_point_distance = INFINITY;
