@@ -203,6 +203,7 @@ void PathToMavros::ensureSetpointSafety() {
   // Check if goal point is within our obstacle distance threshold to its closest point in the PCL.
   // If so, adjust goal so that it is outside threshold, but as near as possible to original goal
   if (closest_point_distance < obstacle_dist_threshold_) {
+    ROS_WARN_THROTTLE(1, "Setpoint inside obstacle distance threshold, adjusting setpoint");
     float scale_factor = obstacle_dist_threshold_ / closest_point_distance;
 
     float dist_x = current_goal_.pose.position.x - closest_point.x;
