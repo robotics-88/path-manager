@@ -8,6 +8,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include <geometry_msgs/PolygonStamped.h>
 #include <geometry_msgs/PoseStamped.h>
+#include "pcl_ros/transforms.h"
 
 namespace path_to_mavros
 {
@@ -26,18 +27,32 @@ PathToMavros::PathToMavros(ros::NodeHandle& node)
   , nh_(node)
   , tf_listener_(tf_buffer_)
   , acceptance_radius_(2.0)
+  , obstacle_dist_threshold_(2.0)
   , goal_received_(false)
   , path_topic_("/search_node/trajectory_position")
 {
   ros::NodeHandle private_nh("~");
 
+  // Params
   private_nh.param<double>("acceptance_radius", acceptance_radius_, acceptance_radius_);
-
+  private_nh.param<double>("obstacle_dist_threshold", obstacle_dist_threshold_, obstacle_dist_threshold_);
   private_nh.param<std::string>("mavros_map_frame", mavros_map_frame_, "map");
-    
+
+  int lidar_type; // 4 is Mid360, 2 is Velodyne (or sim)
+  private_nh.param<int>("lidar_type", lidar_type, 4);
+
+  std::string cloud_topic;
+  private_nh.param<std::string>("cloud_topic", cloud_topic, "/livox/lidar");
+  
+  // Subscribers
   position_sub_ = nh_.subscribe("mavros/local_position/pose", 1, &PathToMavros::positionCallback, this);
   path_sub_ = nh_.subscribe(path_topic_, 1, &PathToMavros::setCurrentPath, this);
 
+  pointcloud_sub_ = lidar_type == 4 ? \
+        nh_.subscribe(cloud_topic, 1, &PathToMavros::livoxPointCloudCallback, this) : \
+        nh_.subscribe(cloud_topic, 1, &PathToMavros::pointCloudCallback, this);
+
+  // Publishers
   mavros_waypoint_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("mavros/setpoint_position/local", 10);
   actual_path_pub_ = nh_.advertise<nav_msgs::Path>("actual_path", 10);
 }
@@ -62,6 +77,31 @@ void PathToMavros::positionCallback(const geometry_msgs::PoseStamped& msg) {
     current_goal_ = path_[0];
     path_.erase(path_.begin());
     publishSetpoint();
+  }
+}
+
+void PathToMavros::pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &msg) {
+  pcl::fromROSMsg(*msg, last_cloud_);
+}
+
+void PathToMavros::livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg) {
+
+  last_cloud_.header.frame_id = msg->header.frame_id;
+  last_cloud_.header.stamp = msg->header.stamp.toNSec() / 1000; // PCL type stamp is in microseconds
+  
+  last_cloud_.clear();
+  int plsize = msg->point_num;
+  last_cloud_.reserve(plsize);
+
+  for (int i = 0; i < plsize; i++) {
+    pcl::PointXYZ added_point;
+
+    added_point.x = msg->points[i].x;
+    added_point.y = msg->points[i].y;
+    added_point.z = msg->points[i].z;
+
+    last_cloud_.points.push_back(added_point);
+
   }
 }
 
@@ -108,6 +148,8 @@ void PathToMavros::setCurrentPath(const nav_msgs::Path::ConstPtr &path) {
 
 void PathToMavros::publishSetpoint() {
 
+  ensureSetpointSafety();
+
   auto setpoint = current_goal_;  // The intermediate position sent to Mavros
 
   // Fill setpoint data
@@ -125,6 +167,53 @@ void PathToMavros::publishSetpoint() {
 
 bool PathToMavros::isCloseToGoal() {
   return distance(last_pos_, current_goal_) < acceptance_radius_;
+}
+
+void PathToMavros::ensureSetpointSafety() {
+
+  // Convert last PCL to mavros frame
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_map(new pcl::PointCloud<pcl::PointXYZ>());
+
+  geometry_msgs::TransformStamped pcl_map_tf;
+  try {
+    pcl_map_tf = tf_buffer_.lookupTransform(mavros_map_frame_, last_cloud_.header.frame_id, ros::Time(0));
+  }
+  catch (tf2::TransformException &ex) {
+    ROS_WARN("%s",ex.what());
+    return;
+  }
+  pcl_ros::transformPointCloud(last_cloud_, *cloud_map, pcl_map_tf.transform);
+
+  // Check PCL points for proximity to goal point, and find closest point in PCL to goal point.
+  float closest_point_distance = INFINITY;
+  pcl::PointXYZ closest_point;
+  for (auto &point : *cloud_map) {
+    float dist_x = current_goal_.pose.position.x - point.x;
+    float dist_y = current_goal_.pose.position.y - point.y;
+    float dist_z = current_goal_.pose.position.z - point.z;
+
+    float total_dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
+
+    if (total_dist < closest_point_distance) {
+      closest_point_distance = total_dist;
+      closest_point = point;
+    }
+  }
+
+  // Check if goal point is within our obstacle distance threshold to its closest point in the PCL.
+  // If so, adjust goal so that it is outside threshold, but as near as possible to original goal
+  if (closest_point_distance < obstacle_dist_threshold_) {
+    ROS_WARN_THROTTLE(1, "Setpoint inside obstacle distance threshold, adjusting setpoint");
+    float scale_factor = obstacle_dist_threshold_ / closest_point_distance;
+
+    float dist_x = current_goal_.pose.position.x - closest_point.x;
+    float dist_y = current_goal_.pose.position.y - closest_point.y;
+    float dist_z = current_goal_.pose.position.z - closest_point.z;
+
+    current_goal_.pose.position.x = closest_point.x + dist_x * scale_factor;
+    current_goal_.pose.position.y = closest_point.y + dist_y * scale_factor;
+    current_goal_.pose.position.z = closest_point.z + dist_z * scale_factor;
+  }
 }
 
 } // namespace path_to_mavros
