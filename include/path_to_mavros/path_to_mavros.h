@@ -66,7 +66,6 @@ class PathToMavros {
         void pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &msg);
         void livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
         void setCurrentPath(const nav_msgs::Path::ConstPtr &path);
-        void setPose(const geometry_msgs::PoseStamped& new_pose);
         void publishSetpoint();
         bool isCloseToGoal();
         void ensureSetpointSafety();
