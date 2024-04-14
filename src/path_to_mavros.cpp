@@ -36,7 +36,6 @@ PathToMavros::PathToMavros(ros::NodeHandle& node)
   // Params
   private_nh.param<double>("acceptance_radius", acceptance_radius_, acceptance_radius_);
   private_nh.param<double>("obstacle_dist_threshold", obstacle_dist_threshold_, obstacle_dist_threshold_);
-  private_nh.param<std::string>("slam_map_frame", slam_map_frame_, "slam_map");
   private_nh.param<std::string>("mavros_map_frame", mavros_map_frame_, "map");
 
   int lidar_type; // 4 is Mid360, 2 is Velodyne (or sim)
@@ -117,21 +116,8 @@ void PathToMavros::setCurrentPath(const nav_msgs::Path::ConstPtr &path) {
   }
   goal_received_ = true;
 
-  // Convert path from slam map frame to mavros map frame
-  geometry_msgs::TransformStamped transform_slam2mavros;
-  std::string transform_error;
-  try {
-    transform_slam2mavros = tf_buffer_.lookupTransform(mavros_map_frame_, slam_map_frame_, path->header.stamp);
-  }
-  catch (tf2::TransformException &ex) {
-    ROS_WARN("%s",ex.what());
-    return;
-  }
   for (int i = 0; i < poses.size(); ++i) {
-    geometry_msgs::PoseStamped pose_transformed;
-    tf2::doTransform(poses[i], pose_transformed, transform_slam2mavros);
-    
-    path_.push_back(pose_transformed);
+    path_.push_back(poses[i]);
   }
 
   last_goal_ = path_[0];

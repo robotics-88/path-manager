@@ -36,7 +36,6 @@ class PathToMavros {
         tf2_ros::Buffer tf_buffer_;
         tf2_ros::TransformListener tf_listener_;
 
-        std::string slam_map_frame_;
         std::string mavros_map_frame_;
 
         double acceptance_radius_;
@@ -67,7 +66,6 @@ class PathToMavros {
         void pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &msg);
         void livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
         void setCurrentPath(const nav_msgs::Path::ConstPtr &path);
-        void setPose(const geometry_msgs::PoseStamped& new_pose);
         void publishSetpoint();
         bool isCloseToGoal();
         void ensureSetpointSafety();
