@@ -1,10 +1,10 @@
 /* 
-© 2023 Robotics 88
+© 2024 Robotics 88
 Author: Erin Linebarger <erin@robotics88.com> 
 */
 
-#ifndef PATH_TO_MAVROS_H_
-#define PATH_TO_MAVROS_H_
+#ifndef PATH_MANAGER_H_
+#define PATH_MANAGER_H_
 
 #include <ros/ros.h>
 
@@ -18,16 +18,16 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include <pcl_ros/point_cloud.h>
 
 
-namespace path_to_mavros {
+namespace path_manager {
 /**
- * @class PathToMavros
- * @brief The PathToMavros class converts ROS paths into individual MAVROS waypoints for execution
+ * @class PathManager
+ * @brief The PathManager class handles things related to the path of the drone, both exploration goals and path management
  */
-class PathToMavros {
+class PathManager {
 
     public:
-        PathToMavros(ros::NodeHandle& node);
-        ~PathToMavros(){};
+        PathManager(ros::NodeHandle& node);
+        ~PathManager(){};
 
     private:
         ros::NodeHandle private_nh_;
@@ -40,35 +40,38 @@ class PathToMavros {
 
         double acceptance_radius_;
         double obstacle_dist_threshold_;
-        bool position_received_;
-        bool goal_received_;
+        bool path_received_;
         geometry_msgs::PoseStamped last_pos_;
-        pcl::PointCloud<pcl::PointXYZ> last_cloud_;
+        pcl::PointCloud<pcl::PointXYZ> cloud_map_;
 
         nav_msgs::Path actual_path_;
-        geometry_msgs::PoseStamped current_goal_;
-        geometry_msgs::PoseStamped last_goal_;
+        geometry_msgs::PoseStamped current_setpoint_;
+        geometry_msgs::PoseStamped last_setpoint_;
         std::vector<geometry_msgs::PoseStamped> path_;
 
         double yaw_target_;
 
-        std::string path_topic_;
         std::string frame_id_;
 
         ros::Subscriber position_sub_;
         ros::Subscriber path_sub_;
         ros::Subscriber pointcloud_sub_;
+        ros::Subscriber goal_sub_;
 
-        ros::Publisher mavros_waypoint_publisher_;
+        ros::Publisher mavros_setpoint_pub_;
         ros::Publisher actual_path_pub_;
 
         void positionCallback(const geometry_msgs::PoseStamped& msg);
         void pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &msg);
         void livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
+        void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
+        pcl::PointCloud<pcl::PointXYZ> transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in);
         void setCurrentPath(const nav_msgs::Path::ConstPtr &path);
         void publishSetpoint();
-        bool isCloseToGoal();
+        bool isCloseToSetpoint();
         void ensureSetpointSafety();
+        void findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ> cloud, geometry_msgs::Point point_in, 
+                                              pcl::PointXYZ &closest_point, float &closest_point_distance);
 };
 
 }
