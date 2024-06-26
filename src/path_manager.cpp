@@ -111,7 +111,7 @@ void PathManager::livoxPointCloudCallback(const livox_ros_driver::CustomMsg::Con
   cloud_map_ = transformCloudToMapFrame(cloud);
 }
 
-void PathManager::goalCallback(const geometry_msgs::Point::ConstPtr &msg) {
+void PathManager::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
   // TODO
 }
 
@@ -123,7 +123,7 @@ pcl::PointCloud<pcl::PointXYZ> PathManager::transformCloudToMapFrame(pcl::PointC
     pcl_map_tf = tf_buffer_.lookupTransform(mavros_map_frame_, cloud_in.header.frame_id, ros::Time(0));
   }
   catch (tf2::TransformException &ex) {
-    ROS_WARN("%s",ex.what());
+    ROS_WARN_THROTTLE(10, "Path Manager: %s",ex.what());
     return cloud_out;
   }
   pcl_ros::transformPointCloud(cloud_in, cloud_out, pcl_map_tf.transform);

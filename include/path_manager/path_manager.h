@@ -64,7 +64,7 @@ class PathManager {
         void positionCallback(const geometry_msgs::PoseStamped& msg);
         void pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &msg);
         void livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
-        void goalCallback(const geometry_msgs::Point::ConstPtr &msg);
+        void goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
         pcl::PointCloud<pcl::PointXYZ> transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in);
         void setCurrentPath(const nav_msgs::Path::ConstPtr &path);
         void publishSetpoint();
