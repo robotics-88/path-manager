@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>path_to_mavros</name>
+  <name>path_manager</name>
   <version>1.0.0</version>
   <description>The path_to_mavros package converts a ROS path into MAVROS waypoints</description>
 

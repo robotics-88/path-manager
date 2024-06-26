@@ -1,20 +1,20 @@
 /* 
-© 2023 Robotics 88
+© 2024 Robotics 88
 Author: Erin Linebarger <erin@robotics88.com> 
 */
 
-#include "path_to_mavros/path_to_mavros.h"
+#include "path_manager/path_manager.h"
 
 int main(int argc, char** argv)
 {
-  ros::init(argc, argv, "path_to_mavros");
+  ros::init(argc, argv, "path_manager");
   if (ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME,
                                      ros::console::levels::Debug)) {
     ros::console::notifyLoggerLevelsChanged();
   }
 
   ros::NodeHandle node;
-  path_to_mavros::PathToMavros pathToMavros(node);
+  path_manager::PathManager PathManager(node);
 
   ros::spin();
 

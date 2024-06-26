@@ -1,13 +1,11 @@
-#ifndef PATH_TO_MAVROS_COMMON_H_
-#define PATH_TO_MAVROS_COMMON_H_
+#ifndef PATH_MANAGER_COMMON_H_
+#define PATH_MANAGER_COMMON_H_
 
 #include <math.h>  // sqrt
 #include <string>
 #include <ctime>
 
-namespace path_to_mavros {
-
-// GLOBAL PLANNER
+namespace path_manager {
 
 template <typename T>
 double squared(T x) {
@@ -112,6 +110,6 @@ inline double posterior(double p, double prior) {
   return prob_obstacle / (prob_obstacle + prob_free + 0.0001);
 }
 
-}  // namespace global_planner
+}  // namespace path_manager
 
-#endif /* PATH_TO_MAVROS_COMMON_H_ */
+#endif /* PATH_MANAGER_COMMON_H_ */
