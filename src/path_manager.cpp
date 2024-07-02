@@ -161,20 +161,24 @@ void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
       // Check point above original alt
       if (i % 2 == 1) {
         if (!goal_above_max) {
-          goal.pose.position.z = original_alt + 0.1 * i;
-        }
-  
-        if (goal.pose.position.z > max_alt) {
-          goal_above_max = true;
+          float alt_adjusted_above = original_alt + 0.1 * i;
+
+          if (goal.pose.position.z < max_alt)
+            goal.pose.position.z = alt_adjusted_above;
+          else
+            goal_above_max = true;
         }
       }
       // Check point below original alt
       else {
-        if (!goal_below_min)
-          goal.pose.position.z = original_alt - 0.1 * i;
+        if (!goal_below_min) {
+          float alt_adjusted_below = original_alt - 0.1 * i;
 
-        if (goal.pose.position.z < min_alt)
-          goal_below_min = true;
+          if (goal.pose.position.z > min_alt)
+            goal.pose.position.z = alt_adjusted_below;
+          else
+            goal_below_min = true;
+        }
       }
 
       if (goal_above_max && goal_below_min) {
