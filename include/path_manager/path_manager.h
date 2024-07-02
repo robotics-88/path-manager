@@ -49,6 +49,9 @@ class PathManager {
         geometry_msgs::PoseStamped last_setpoint_;
         std::vector<geometry_msgs::PoseStamped> path_;
 
+        geometry_msgs::PoseStamped current_goal_;
+        bool goal_valid_;
+
         double yaw_target_;
 
         std::string frame_id_;
@@ -60,6 +63,7 @@ class PathManager {
 
         ros::Publisher mavros_setpoint_pub_;
         ros::Publisher actual_path_pub_;
+        ros::Publisher adjusted_goal_pub_;
 
         void positionCallback(const geometry_msgs::PoseStamped& msg);
         void pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &msg);
@@ -72,6 +76,7 @@ class PathManager {
         void ensureSetpointSafety();
         void findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ> cloud, geometry_msgs::Point point_in, 
                                               pcl::PointXYZ &closest_point, float &closest_point_distance);
+        void adjustGoal(geometry_msgs::PoseStamped goal);
 };
 
 }
