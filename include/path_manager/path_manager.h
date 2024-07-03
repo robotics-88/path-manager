@@ -51,6 +51,7 @@ class PathManager {
 
         geometry_msgs::PoseStamped current_goal_;
         bool goal_valid_;
+        float adjustment_margin_;
 
         double yaw_target_;
 

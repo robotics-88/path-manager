@@ -28,6 +28,7 @@ PathManager::PathManager(ros::NodeHandle& node)
   , tf_listener_(tf_buffer_)
   , path_received_(false)
   , goal_valid_(false)
+  , adjustment_margin_(0.5)
 {
   ros::NodeHandle private_nh("~");
 
@@ -161,7 +162,7 @@ void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
       // Check point above original alt
       if (i % 2 == 1) {
         if (!goal_above_max) {
-          float alt_adjusted_above = original_alt + 0.1 * i;
+          float alt_adjusted_above = original_alt + adjustment_margin_ * (i + 1) / 2;
 
           if (goal.pose.position.z < max_alt)
             goal.pose.position.z = alt_adjusted_above;
@@ -172,7 +173,7 @@ void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
       // Check point below original alt
       else {
         if (!goal_below_min) {
-          float alt_adjusted_below = original_alt - 0.1 * i;
+          float alt_adjusted_below = original_alt - adjustment_margin_ * i / 2;
 
           if (goal.pose.position.z > min_alt)
             goal.pose.position.z = alt_adjusted_below;
