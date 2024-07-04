@@ -149,41 +149,38 @@ void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
   bool goal_ok = false;
   while (!goal_ok) {
 
+    // Break out of loop if we have checked all options and none are OK
+    if (goal_above_max && goal_below_min) {
+      ROS_WARN_THROTTLE(1, "Path Manager: Acceptable goal not found");
+      break;
+    }
+
     // Check original altitude, do nothing here
     if (i == 0) {
     }
     // Check point above original alt
     else if (i % 2 == 1) {
-      if (!goal_above_max) {
-        float alt_adjusted_above = original_alt + adjustment_margin_ * (i + 1) / 2;
+      float alt_adjusted_above = original_alt + adjustment_margin_ * (i + 1) / 2;
 
-        if (goal.pose.position.z < max_alt)
-          goal.pose.position.z = alt_adjusted_above;
-        else {
-          goal_above_max = true;
-          i++;
-          continue;
-        }
+      if (alt_adjusted_above <= max_alt)
+        goal.pose.position.z = alt_adjusted_above;
+      else {
+        goal_above_max = true;
+        i++;
+        continue;
       }
     }
     // Check point below original alt
     else {
-      if (!goal_below_min) {
-        float alt_adjusted_below = original_alt - adjustment_margin_ * i / 2;
+      float alt_adjusted_below = original_alt - adjustment_margin_ * i / 2;
 
-        if (goal.pose.position.z > min_alt)
-          goal.pose.position.z = alt_adjusted_below;
-        else {
-          goal_below_min = true;
-          i++;
-          continue;
-        }
+      if (alt_adjusted_below >= min_alt)
+        goal.pose.position.z = alt_adjusted_below;
+      else {
+        goal_below_min = true;
+        i++;
+        continue;
       }
-    }
-
-    if (goal_above_max && goal_below_min) {
-      ROS_WARN_THROTTLE(1, "Path Manager: Acceptable goal not found");
-      break;
     }
 
     // Check to see if goal point is in obstacle dist threshold, if not, publish it.
