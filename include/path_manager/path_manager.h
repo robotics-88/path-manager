@@ -50,7 +50,7 @@ class PathManager {
         std::vector<geometry_msgs::PoseStamped> path_;
 
         geometry_msgs::PoseStamped current_goal_;
-        bool goal_valid_;
+        bool goal_init_;
         float adjustment_margin_;
 
         double yaw_target_;

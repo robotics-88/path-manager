@@ -27,7 +27,7 @@ PathManager::PathManager(ros::NodeHandle& node)
   , nh_(node)
   , tf_listener_(tf_buffer_)
   , path_received_(false)
-  , goal_valid_(false)
+  , goal_init_(false)
   , adjustment_margin_(0.5)
 {
   ros::NodeHandle private_nh("~");
@@ -89,7 +89,7 @@ void PathManager::pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &m
   pcl::fromROSMsg(*msg, cloud);
 
   cloud_map_ = transformCloudToMapFrame(cloud);
-  if (goal_valid_)
+  if (goal_init_)
     adjustGoal(current_goal_);
 }
 
@@ -114,7 +114,7 @@ void PathManager::livoxPointCloudCallback(const livox_ros_driver::CustomMsg::Con
   }
 
   cloud_map_ = transformCloudToMapFrame(cloud);
-  if (goal_valid_)
+  if (goal_init_)
     adjustGoal(current_goal_);
 }
 
@@ -187,7 +187,7 @@ void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
     findClosestPointInCloud(cloud_map_, goal.pose.position, closest_point, closest_point_distance);
     if (closest_point_distance > obstacle_dist_threshold_) {
       goal_ok = true;
-      goal_valid_ = true;
+      goal_init_ = true;
       if (current_goal_ != goal) {
         current_goal_ = goal;
         adjusted_goal_pub_.publish(goal);
