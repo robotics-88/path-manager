@@ -145,9 +145,48 @@ void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
 
   // Increasing iterations will check points further and further away from the
   // original altitude, and we will use the closest point that is OK. 
-  int i = 1;
+  int i = 0;
   bool goal_ok = false;
   while (!goal_ok) {
+
+    // Check original altitude, do nothing here
+    if (i == 0) {
+    }
+    // Check point above original alt
+    else if (i % 2 == 1) {
+      if (!goal_above_max) {
+        float alt_adjusted_above = original_alt + adjustment_margin_ * (i + 1) / 2;
+
+        if (goal.pose.position.z < max_alt)
+          goal.pose.position.z = alt_adjusted_above;
+        else {
+          goal_above_max = true;
+          i++;
+          continue;
+        }
+      }
+    }
+    // Check point below original alt
+    else {
+      if (!goal_below_min) {
+        float alt_adjusted_below = original_alt - adjustment_margin_ * i / 2;
+
+        if (goal.pose.position.z > min_alt)
+          goal.pose.position.z = alt_adjusted_below;
+        else {
+          goal_below_min = true;
+          i++;
+          continue;
+        }
+      }
+    }
+
+    if (goal_above_max && goal_below_min) {
+      ROS_WARN_THROTTLE(1, "Path Manager: Acceptable goal not found");
+      break;
+    }
+
+    // Check to see if goal point is in obstacle dist threshold, if not, publish it.
     findClosestPointInCloud(cloud_map_, goal.pose.position, closest_point, closest_point_distance);
     if (closest_point_distance > obstacle_dist_threshold_) {
       goal_ok = true;
@@ -157,38 +196,8 @@ void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
         adjusted_goal_pub_.publish(goal);
       }
     }
-    else {
-      
-      // Check point above original alt
-      if (i % 2 == 1) {
-        if (!goal_above_max) {
-          float alt_adjusted_above = original_alt + adjustment_margin_ * (i + 1) / 2;
 
-          if (goal.pose.position.z < max_alt)
-            goal.pose.position.z = alt_adjusted_above;
-          else
-            goal_above_max = true;
-        }
-      }
-      // Check point below original alt
-      else {
-        if (!goal_below_min) {
-          float alt_adjusted_below = original_alt - adjustment_margin_ * i / 2;
-
-          if (goal.pose.position.z > min_alt)
-            goal.pose.position.z = alt_adjusted_below;
-          else
-            goal_below_min = true;
-        }
-      }
-
-      if (goal_above_max && goal_below_min) {
-        ROS_WARN_THROTTLE(1, "Path Manager: Acceptable goal not found");
-        break;
-      }
-
-      i++; 
-    }
+    i++;
   }
 }
 
