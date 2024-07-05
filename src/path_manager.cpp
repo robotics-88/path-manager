@@ -27,6 +27,8 @@ PathManager::PathManager(ros::NodeHandle& node)
   , nh_(node)
   , tf_listener_(tf_buffer_)
   , path_received_(false)
+  , goal_init_(false)
+  , adjustment_margin_(0.5)
 {
   ros::NodeHandle private_nh("~");
 
@@ -40,7 +42,7 @@ PathManager::PathManager(ros::NodeHandle& node)
 
   std::string cloud_topic, goal_topic, path_topic;
   private_nh.param<std::string>("cloud_topic", cloud_topic, "/livox/lidar");
-  private_nh.param<std::string>("goal_topic", goal_topic, "/goal");
+  private_nh.param<std::string>("goal_topic", goal_topic, "/goal_raw");
   private_nh.param<std::string>("path_topic", path_topic, "/search_node/trajectory_position");
   
   // Subscribers
@@ -56,6 +58,7 @@ PathManager::PathManager(ros::NodeHandle& node)
   // Publishers
   mavros_setpoint_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("mavros/setpoint_position/local", 10);
   actual_path_pub_ = nh_.advertise<nav_msgs::Path>("actual_path", 10);
+  adjusted_goal_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/goal", 10);
 }
 
 // Sets the current position and checks if the current setpoint has been reached
@@ -86,6 +89,8 @@ void PathManager::pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &m
   pcl::fromROSMsg(*msg, cloud);
 
   cloud_map_ = transformCloudToMapFrame(cloud);
+  if (goal_init_)
+    adjustGoal(current_goal_);
 }
 
 void PathManager::livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg) {
@@ -109,10 +114,88 @@ void PathManager::livoxPointCloudCallback(const livox_ros_driver::CustomMsg::Con
   }
 
   cloud_map_ = transformCloudToMapFrame(cloud);
+  if (goal_init_)
+    adjustGoal(current_goal_);
 }
 
 void PathManager::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
-  // TODO
+  adjustGoal(*msg);
+}
+
+void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
+
+  float closest_point_distance;
+  pcl::PointXYZ closest_point;
+
+  float original_alt = goal.pose.position.z;
+  float max_alt, min_alt;
+
+  bool goal_above_max = false;
+  bool goal_below_min = false;
+
+  if (!ros::param::get("/task_manager/max_alt", max_alt))
+    ROS_WARN("Drone state manager cannot get max altitude param");
+
+  if (!ros::param::get("/task_manager/min_alt", min_alt))
+    ROS_WARN("Drone state manager cannot get min altitude param");
+
+  // This is initially a little complicated to understand. What this is doing is
+  // alternating checking a point above the original altitude or below it
+  // to see if the goal point is within the obstacle dist threshold to nearest pcl point.
+
+  // Increasing iterations will check points further and further away from the
+  // original altitude, and we will use the closest point that is OK. 
+  int i = 0;
+  bool goal_ok = false;
+  while (!goal_ok) {
+
+    // Break out of loop if we have checked all options and none are OK
+    if (goal_above_max && goal_below_min) {
+      ROS_WARN_THROTTLE(1, "Path Manager: Acceptable goal not found");
+      break;
+    }
+
+    // Check original altitude, do nothing here
+    if (i == 0) {
+    }
+    // Check point above original alt
+    else if (i % 2 == 1) {
+      float alt_adjusted_above = original_alt + adjustment_margin_ * (i + 1) / 2;
+
+      if (alt_adjusted_above <= max_alt)
+        goal.pose.position.z = alt_adjusted_above;
+      else {
+        goal_above_max = true;
+        i++;
+        continue;
+      }
+    }
+    // Check point below original alt
+    else {
+      float alt_adjusted_below = original_alt - adjustment_margin_ * i / 2;
+
+      if (alt_adjusted_below >= min_alt)
+        goal.pose.position.z = alt_adjusted_below;
+      else {
+        goal_below_min = true;
+        i++;
+        continue;
+      }
+    }
+
+    // Check to see if goal point is in obstacle dist threshold, if not, publish it.
+    findClosestPointInCloud(cloud_map_, goal.pose.position, closest_point, closest_point_distance);
+    if (closest_point_distance > obstacle_dist_threshold_) {
+      goal_ok = true;
+      goal_init_ = true;
+      if (current_goal_ != goal) {
+        current_goal_ = goal;
+        adjusted_goal_pub_.publish(goal);
+      }
+    }
+
+    i++;
+  }
 }
 
 pcl::PointCloud<pcl::PointXYZ> PathManager::transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in) {

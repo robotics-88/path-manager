@@ -4,7 +4,7 @@
     <arg name="obstacle_dist_threshold" default="2.0"/>
     <arg name="cloud_topic" default="/livox/lidar"/>
     <arg name="lidar_type" default="4"/>
-    <arg name="goal_topic" default="/goal"/>
+    <arg name="goal_topic" default="/goal_raw"/>
 
     <node pkg="path_manager" type="path_manager_node" respawn="false" name="path_manager" output="screen">
         <param name="mavros_map_frame" value="$(arg mavros_map_frame)"/>
