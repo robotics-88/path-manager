@@ -78,6 +78,14 @@ class PathManager {
         void findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ> cloud, geometry_msgs::Point point_in, 
                                               pcl::PointXYZ &closest_point, float &closest_point_distance);
         void adjustGoal(geometry_msgs::PoseStamped goal);
+
+        void profile(const std::string& function_name, std::function<void()> func) {
+            auto start = std::chrono::high_resolution_clock::now();
+            func();
+            auto stop = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
+            ROS_INFO_STREAM("Execution time of " << function_name << ": " << duration.count() << " ms");
+        }
 };
 
 }

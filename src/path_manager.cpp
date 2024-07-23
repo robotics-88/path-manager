@@ -63,28 +63,31 @@ PathManager::PathManager(ros::NodeHandle& node)
 
 // Sets the current position and checks if the current setpoint has been reached
 void PathManager::positionCallback(const geometry_msgs::PoseStamped& msg) {
-  // Update position
-  last_pos_ = msg;
+  // profile("path_manager positionCallback", [&]() {
+    // Update position
+    last_pos_ = msg;
 
-  last_pos_.header.frame_id = mavros_map_frame_;
-  actual_path_.poses.push_back(last_pos_);
-  actual_path_pub_.publish(actual_path_);
+    last_pos_.header.frame_id = mavros_map_frame_;
+    actual_path_.poses.push_back(last_pos_);
+    actual_path_pub_.publish(actual_path_);
 
-  if (path_.size() == 0) {
-    path_received_ = false;
-  }
+    if (path_.size() == 0) {
+      path_received_ = false;
+    }
 
-  // Check if we are close enough to current setpoint to get the next part of the
-  // path. Do as a while loop so that we publish the furthest setpoint that is still within the acceptance radius
-  while (path_.size() > 0 && isCloseToSetpoint()) {
-    last_setpoint_ = current_setpoint_;
-    current_setpoint_ = path_[0];
-    path_.erase(path_.begin());
-    publishSetpoint();
-  }
+    // Check if we are close enough to current setpoint to get the next part of the
+    // path. Do as a while loop so that we publish the furthest setpoint that is still within the acceptance radius
+    while (path_.size() > 0 && isCloseToSetpoint()) {
+      last_setpoint_ = current_setpoint_;
+      current_setpoint_ = path_[0];
+      path_.erase(path_.begin());
+      publishSetpoint();
+    }
+  // });
 }
 
 void PathManager::pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &msg) {
+
   pcl::PointCloud<pcl::PointXYZ> cloud;
   pcl::fromROSMsg(*msg, cloud);
 
@@ -94,28 +97,29 @@ void PathManager::pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &m
 }
 
 void PathManager::livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg) {
+  profile("path_manager livoxPointCloudCallback", [&]() {
+    pcl::PointCloud<pcl::PointXYZ> cloud;
 
-  pcl::PointCloud<pcl::PointXYZ> cloud;
+    cloud.header.frame_id = msg->header.frame_id;
+    cloud.header.stamp = msg->header.stamp.toNSec() / 1000; // PCL type stamp is in microseconds
+    
+    int plsize = msg->point_num;
+    cloud.reserve(plsize);
 
-  cloud.header.frame_id = msg->header.frame_id;
-  cloud.header.stamp = msg->header.stamp.toNSec() / 1000; // PCL type stamp is in microseconds
-  
-  int plsize = msg->point_num;
-  cloud.reserve(plsize);
+    for (int i = 0; i < plsize; i++) {
+      pcl::PointXYZ added_point;
 
-  for (int i = 0; i < plsize; i++) {
-    pcl::PointXYZ added_point;
+      added_point.x = msg->points[i].x;
+      added_point.y = msg->points[i].y;
+      added_point.z = msg->points[i].z;
 
-    added_point.x = msg->points[i].x;
-    added_point.y = msg->points[i].y;
-    added_point.z = msg->points[i].z;
-
-    cloud.points.push_back(added_point);
-  }
+      cloud.points.push_back(added_point);
+    }
 
   cloud_map_ = transformCloudToMapFrame(cloud);
   if (goal_init_)
     adjustGoal(current_goal_);
+  });
 }
 
 void PathManager::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
@@ -200,64 +204,74 @@ void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
 
 pcl::PointCloud<pcl::PointXYZ> PathManager::transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in) {
   pcl::PointCloud<pcl::PointXYZ> cloud_out;
+  // profile("path_manager transformCloudToMapFrame", [&]() {
 
-  geometry_msgs::TransformStamped pcl_map_tf;
-  try {
-    pcl_map_tf = tf_buffer_.lookupTransform(mavros_map_frame_, cloud_in.header.frame_id, ros::Time(0));
-  }
-  catch (tf2::TransformException &ex) {
-    ROS_WARN_THROTTLE(10, "Path Manager: %s",ex.what());
-    return cloud_out;
-  }
-  pcl_ros::transformPointCloud(cloud_in, cloud_out, pcl_map_tf.transform);
-
+    geometry_msgs::TransformStamped pcl_map_tf;
+    try {
+      pcl_map_tf = tf_buffer_.lookupTransform(mavros_map_frame_, cloud_in.header.frame_id, ros::Time(0));
+    }
+    catch (tf2::TransformException &ex) {
+      ROS_WARN_THROTTLE(10, "Path Manager: %s",ex.what());
+      return cloud_out;
+    }
+    pcl_ros::transformPointCloud(cloud_in, cloud_out, pcl_map_tf.transform);
+  // });
   return cloud_out;
 }
 
 void PathManager::setCurrentPath(const nav_msgs::Path::ConstPtr &path) {
-  std::vector<geometry_msgs::PoseStamped> poses = path->poses;
+  profile("path_manager setCurrentPath", [&]() {
 
-  path_.clear();
+    std::vector<geometry_msgs::PoseStamped> poses = path->poses;
 
-  if (poses.size() < 2) {
-    ROS_WARN("Received empty path\n");
-    return;
-  }
-  path_received_ = true;
+    path_.clear();
 
-  for (int i = 0; i < poses.size(); ++i) {
-    path_.push_back(poses[i]);
-  }
+    if (poses.size() < 2) {
+      ROS_WARN("Received empty path\n");
+      return;
+    }
+    path_received_ = true;
 
-  last_setpoint_ = path_[0];
-  current_setpoint_ = path_[1];
+    for (int i = 0; i < poses.size(); ++i) {
+      path_.push_back(poses[i]);
+    }
 
-  // Calculate orientation to point vehicle towards final destination
-  geometry_msgs::PoseStamped final_setpoint = path_.back();
-  auto direction_vec = subtractPoints(final_setpoint.pose.position, last_pos_.pose.position);
-  yaw_target_ = atan2(direction_vec.y, direction_vec.x);
+    last_setpoint_ = path_[0];
+    current_setpoint_ = path_[1];
 
-  // Publish first setpoint
-  publishSetpoint();
+    // Calculate orientation to point vehicle towards final destination
+    geometry_msgs::PoseStamped final_setpoint = path_.back();
+    auto direction_vec = subtractPoints(final_setpoint.pose.position, last_pos_.pose.position);
+    yaw_target_ = atan2(direction_vec.y, direction_vec.x);
+
+    // Publish first setpoint
+    publishSetpoint();
+  });
 }
 
 void PathManager::publishSetpoint() {
+  profile("path_manager publishSetpoint", [&]() {
 
-  ensureSetpointSafety();
+    ensureSetpointSafety();
 
-  auto setpoint = current_setpoint_;  // The intermediate position sent to Mavros
+    auto setpoint = current_setpoint_;  // The intermediate position sent to Mavros
 
-  // Fill setpoint data
-  setpoint.header.stamp = ros::Time::now();
-  setpoint.header.frame_id = mavros_map_frame_;
-  setpoint.pose = current_setpoint_.pose;
+    // Fill setpoint data
+    setpoint.header.stamp = ros::Time::now();
+    setpoint.header.frame_id = mavros_map_frame_;
+    setpoint.pose = current_setpoint_.pose;
+    // if(setpoint.pose.position.x == 0 || setpoint.pose.position.y == 0 || setpoint.pose.position.z == 0 ) {
+    //   std::cout << "setpoint poses!!!" << std::endl;
+    //   std::cout << setpoint << std::endl; 
+    // }
 
-  tf2::Quaternion setpoint_q;
-  setpoint_q.setRPY(0.0, 0.0, yaw_target_);
-  tf2::convert(setpoint_q, setpoint.pose.orientation);
+    tf2::Quaternion setpoint_q;
+    setpoint_q.setRPY(0.0, 0.0, yaw_target_);
+    tf2::convert(setpoint_q, setpoint.pose.orientation);
 
-  // Publish setpoint to Mavros
-  mavros_setpoint_pub_.publish(setpoint);
+    // Publish setpoint to Mavros
+    mavros_setpoint_pub_.publish(setpoint);
+  });
 }
 
 bool PathManager::isCloseToSetpoint() {
@@ -265,45 +279,49 @@ bool PathManager::isCloseToSetpoint() {
 }
 
 void PathManager::ensureSetpointSafety() {
+  profile("path_manager ensureSetpointSafety", [&]() {
 
-  // Check PCL points for proximity to setpoint, and find closest point in PCL to setpoint.
-  float closest_point_distance;
-  pcl::PointXYZ closest_point;
+    // Check PCL points for proximity to setpoint, and find closest point in PCL to setpoint.
+    float closest_point_distance;
+    pcl::PointXYZ closest_point;
 
-  findClosestPointInCloud(cloud_map_, current_setpoint_.pose.position, closest_point, closest_point_distance);
+    findClosestPointInCloud(cloud_map_, current_setpoint_.pose.position, closest_point, closest_point_distance);
 
-  // Check if setpoint is within our obstacle distance threshold to its closest point in the PCL.
-  // If so, adjust setpoint so that it is outside threshold, but as near as possible to original setpoint
-  if (closest_point_distance < obstacle_dist_threshold_) {
-    ROS_WARN_THROTTLE(1, "Setpoint inside obstacle distance threshold, adjusting setpoint");
-    float scale_factor = obstacle_dist_threshold_ / closest_point_distance;
+    // Check if setpoint is within our obstacle distance threshold to its closest point in the PCL.
+    // If so, adjust setpoint so that it is outside threshold, but as near as possible to original setpoint
+    if (closest_point_distance < obstacle_dist_threshold_) {
+      ROS_WARN_THROTTLE(1, "Setpoint inside obstacle distance threshold, adjusting setpoint");
+      float scale_factor = obstacle_dist_threshold_ / closest_point_distance;
 
-    float dist_x = current_setpoint_.pose.position.x - closest_point.x;
-    float dist_y = current_setpoint_.pose.position.y - closest_point.y;
-    float dist_z = current_setpoint_.pose.position.z - closest_point.z;
+      float dist_x = current_setpoint_.pose.position.x - closest_point.x;
+      float dist_y = current_setpoint_.pose.position.y - closest_point.y;
+      float dist_z = current_setpoint_.pose.position.z - closest_point.z;
 
-    current_setpoint_.pose.position.x = closest_point.x + dist_x * scale_factor;
-    current_setpoint_.pose.position.y = closest_point.y + dist_y * scale_factor;
-    current_setpoint_.pose.position.z = closest_point.z + dist_z * scale_factor;
-  }
+      current_setpoint_.pose.position.x = closest_point.x + dist_x * scale_factor;
+      current_setpoint_.pose.position.y = closest_point.y + dist_y * scale_factor;
+      current_setpoint_.pose.position.z = closest_point.z + dist_z * scale_factor;
+    }
+  });
 }
 
 void PathManager::findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ> cloud, geometry_msgs::Point point_in, 
                                            pcl::PointXYZ &closest_point, float &closest_point_distance) {
+  profile("path_manager findClosestPointInCloud", [&]() {
 
-  closest_point_distance = INFINITY;
-  for (auto &point : cloud_map_) {
-    float dist_x = point_in.x - point.x;
-    float dist_y = point_in.y - point.y;
-    float dist_z = point_in.z - point.z;
+    closest_point_distance = INFINITY;
+    for (auto &point : cloud_map_) {
+      float dist_x = point_in.x - point.x;
+      float dist_y = point_in.y - point.y;
+      float dist_z = point_in.z - point.z;
 
-    float total_dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
+      float total_dist = sqrt(dist_x*dist_x + dist_y*dist_y + dist_z*dist_z);
 
-    if (total_dist < closest_point_distance) {
-      closest_point_distance = total_dist;
-      closest_point = point;
+      if (total_dist < closest_point_distance) {
+        closest_point_distance = total_dist;
+        closest_point = point;
+      }
     }
-  }
+  });
 }
 
 } // namespace path_manager
