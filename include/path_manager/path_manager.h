@@ -84,7 +84,9 @@ class PathManager {
             func();
             auto stop = std::chrono::high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(stop - start);
-            ROS_INFO_STREAM("Execution time of " << function_name << ": " << duration.count() << " ms");
+            if(duration.count() > 500) {
+                ROS_INFO_STREAM("Execution time of " << function_name << ": " << duration.count() << " ms");
+            }
         }
 };
 
