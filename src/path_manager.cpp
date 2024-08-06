@@ -38,8 +38,6 @@ PathManager::PathManager(ros::NodeHandle& node)
   private_nh.param<std::string>("mavros_map_frame", mavros_map_frame_, "map");
   private_nh.param<bool>("adjust_goal", adjust_goal_, false);
 
-  std::cout << "ADJUSTING GOAL? " << adjust_goal_ << std::endl;
-
   int lidar_type; // 4 is Mid360, 2 is Velodyne (or sim)
   private_nh.param<int>("lidar_type", lidar_type, 4);
 
@@ -123,11 +121,9 @@ void PathManager::livoxPointCloudCallback(const livox_ros_driver::CustomMsg::Con
 
 void PathManager::rawGoalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
   if (adjust_goal_) {
-    std::cout << "Adjusting goal I guess" << std::endl;
     adjustGoal(*msg);
   }
   else {
-    std::cout << "NOT Adjusting goal" << std::endl;
     goal_pub_.publish(*msg);
   }
 }
