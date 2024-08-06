@@ -36,13 +36,16 @@ PathManager::PathManager(ros::NodeHandle& node)
   private_nh.param<double>("acceptance_radius", acceptance_radius_, 2.0);
   private_nh.param<double>("obstacle_dist_threshold", obstacle_dist_threshold_, 2.0);
   private_nh.param<std::string>("mavros_map_frame", mavros_map_frame_, "map");
+  private_nh.param<bool>("adjust_goal", adjust_goal_, false);
+
+  std::cout << "ADJUSTING GOAL? " << adjust_goal_ << std::endl;
 
   int lidar_type; // 4 is Mid360, 2 is Velodyne (or sim)
   private_nh.param<int>("lidar_type", lidar_type, 4);
 
-  std::string cloud_topic, goal_topic, path_topic;
+  std::string cloud_topic, raw_goal_topic, path_topic;
   private_nh.param<std::string>("cloud_topic", cloud_topic, "/livox/lidar");
-  private_nh.param<std::string>("goal_topic", goal_topic, "/goal_raw");
+  private_nh.param<std::string>("raw_goal_topic", raw_goal_topic, "/goal_raw");
   private_nh.param<std::string>("path_topic", path_topic, "/search_node/trajectory_position");
   
   // Subscribers
@@ -53,12 +56,12 @@ PathManager::PathManager(ros::NodeHandle& node)
         nh_.subscribe(cloud_topic, 1, &PathManager::livoxPointCloudCallback, this) : \
         nh_.subscribe(cloud_topic, 1, &PathManager::pointCloudCallback, this);
 
-  goal_sub_ = nh_.subscribe(goal_topic, 1, &PathManager::goalCallback, this);
+  raw_goal_sub_ = nh_.subscribe(raw_goal_topic, 1, &PathManager::rawGoalCallback, this);
 
   // Publishers
   mavros_setpoint_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("mavros/setpoint_position/local", 10);
   actual_path_pub_ = nh_.advertise<nav_msgs::Path>("actual_path", 10);
-  adjusted_goal_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/goal", 10);
+  goal_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/goal", 10);
 }
 
 // Sets the current position and checks if the current setpoint has been reached
@@ -89,7 +92,7 @@ void PathManager::pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &m
   pcl::fromROSMsg(*msg, cloud);
 
   cloud_map_ = transformCloudToMapFrame(cloud);
-  if (goal_init_)
+  if (goal_init_ && adjust_goal_)
     adjustGoal(current_goal_);
 }
 
@@ -114,12 +117,19 @@ void PathManager::livoxPointCloudCallback(const livox_ros_driver::CustomMsg::Con
   }
 
   cloud_map_ = transformCloudToMapFrame(cloud);
-  if (goal_init_)
+  if (goal_init_ && adjust_goal_)
     adjustGoal(current_goal_);
 }
 
-void PathManager::goalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
-  adjustGoal(*msg);
+void PathManager::rawGoalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
+  if (adjust_goal_) {
+    std::cout << "Adjusting goal I guess" << std::endl;
+    adjustGoal(*msg);
+  }
+  else {
+    std::cout << "NOT Adjusting goal" << std::endl;
+    goal_pub_.publish(*msg);
+  }
 }
 
 void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
@@ -190,7 +200,7 @@ void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
       goal_init_ = true;
       if (current_goal_ != goal) {
         current_goal_ = goal;
-        adjusted_goal_pub_.publish(goal);
+        goal_pub_.publish(goal);
       }
     }
 
