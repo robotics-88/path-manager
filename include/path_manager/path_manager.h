@@ -42,6 +42,7 @@ class PathManager {
         double obstacle_dist_threshold_;
         bool path_received_;
         bool adjust_goal_;
+        bool adjust_setpoint_;
         geometry_msgs::PoseStamped last_pos_;
         pcl::PointCloud<pcl::PointXYZ> cloud_map_;
 
@@ -69,13 +70,13 @@ class PathManager {
 
         void positionCallback(const geometry_msgs::PoseStamped& msg);
         void pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &msg);
-        void livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
+        // void livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
         void rawGoalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
         pcl::PointCloud<pcl::PointXYZ> transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in);
         void setCurrentPath(const nav_msgs::Path::ConstPtr &path);
         void publishSetpoint();
         bool isCloseToSetpoint();
-        void ensureSetpointSafety();
+        void adjustSetpoint();
         void findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ> cloud, geometry_msgs::Point point_in, 
                                               pcl::PointXYZ &closest_point, float &closest_point_distance);
         void adjustGoal(geometry_msgs::PoseStamped goal);
