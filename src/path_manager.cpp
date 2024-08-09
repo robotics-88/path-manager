@@ -37,22 +37,16 @@ PathManager::PathManager(ros::NodeHandle& node)
   private_nh.param<double>("obstacle_dist_threshold", obstacle_dist_threshold_, 2.0);
   private_nh.param<std::string>("mavros_map_frame", mavros_map_frame_, "map");
   private_nh.param<bool>("adjust_goal", adjust_goal_, false);
+  private_nh.param<bool>("adjust_setpoint", adjust_setpoint_, false);
 
-  int lidar_type; // 4 is Mid360, 2 is Velodyne (or sim)
-  private_nh.param<int>("lidar_type", lidar_type, 4);
-
-  std::string cloud_topic, raw_goal_topic, path_topic;
-  private_nh.param<std::string>("cloud_topic", cloud_topic, "/livox/lidar");
+  std::string raw_goal_topic, path_topic;
   private_nh.param<std::string>("raw_goal_topic", raw_goal_topic, "/goal_raw");
   private_nh.param<std::string>("path_topic", path_topic, "/search_node/trajectory_position");
   
   // Subscribers
   position_sub_ = nh_.subscribe("mavros/local_position/pose", 1, &PathManager::positionCallback, this);
   path_sub_ = nh_.subscribe(path_topic, 1, &PathManager::setCurrentPath, this);
-
-  pointcloud_sub_ = lidar_type == 4 ? \
-        nh_.subscribe(cloud_topic, 1, &PathManager::livoxPointCloudCallback, this) : \
-        nh_.subscribe(cloud_topic, 1, &PathManager::pointCloudCallback, this);
+  pointcloud_sub_ = nh_.subscribe("/cloud_registered_map", 1, &PathManager::pointCloudCallback, this);
 
   raw_goal_sub_ = nh_.subscribe(raw_goal_topic, 1, &PathManager::rawGoalCallback, this);
 
@@ -86,15 +80,14 @@ void PathManager::positionCallback(const geometry_msgs::PoseStamped& msg) {
 }
 
 void PathManager::pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &msg) {
-  pcl::PointCloud<pcl::PointXYZ> cloud;
-  pcl::fromROSMsg(*msg, cloud);
+  pcl::fromROSMsg(*msg, cloud_map_);
 
-  cloud_map_ = transformCloudToMapFrame(cloud);
   if (goal_init_ && adjust_goal_)
     adjustGoal(current_goal_);
 }
 
-void PathManager::livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg) {
+// Currently unused but may want in future
+/* void PathManager::livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg) {
 
   pcl::PointCloud<pcl::PointXYZ> cloud;
 
@@ -117,7 +110,7 @@ void PathManager::livoxPointCloudCallback(const livox_ros_driver::CustomMsg::Con
   cloud_map_ = transformCloudToMapFrame(cloud);
   if (goal_init_ && adjust_goal_)
     adjustGoal(current_goal_);
-}
+} */
 
 void PathManager::rawGoalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
   if (adjust_goal_) {
@@ -249,7 +242,8 @@ void PathManager::setCurrentPath(const nav_msgs::Path::ConstPtr &path) {
 
 void PathManager::publishSetpoint() {
 
-  ensureSetpointSafety();
+  if (adjust_setpoint_)
+    adjustSetpoint();
 
   auto setpoint = current_setpoint_;  // The intermediate position sent to Mavros
 
@@ -270,7 +264,7 @@ bool PathManager::isCloseToSetpoint() {
   return distance(last_pos_, current_setpoint_) < acceptance_radius_;
 }
 
-void PathManager::ensureSetpointSafety() {
+void PathManager::adjustSetpoint() {
 
   // Check PCL points for proximity to setpoint, and find closest point in PCL to setpoint.
   float closest_point_distance;
