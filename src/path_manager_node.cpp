@@ -7,16 +7,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 int main(int argc, char** argv)
 {
-  ros::init(argc, argv, "path_manager");
-  if (ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME,
-                                     ros::console::levels::Debug)) {
-    ros::console::notifyLoggerLevelsChanged();
-  }
-
-  ros::NodeHandle node;
-  path_manager::PathManager PathManager(node);
-
-  ros::spin();
-
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared<path_manager::PathManager>());
+  rclcpp::shutdown();
   return 0;
 }

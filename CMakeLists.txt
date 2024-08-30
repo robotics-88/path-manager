@@ -1,76 +1,63 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.5)
 project(path_manager)
 
-set(CMAKE_CXX_STANDARD 17)
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
 
-find_package(OpenCV REQUIRED)
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(mavros_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+find_package(pcl_ros REQUIRED)
+find_package(livox_ros_driver2 REQUIRED)
+find_package(PCL REQUIRED)
 
-## Find catkin macros and libraries
-find_package(catkin REQUIRED COMPONENTS
-  mavros_msgs
-  roscpp
-  roslib
-  std_msgs
-  tf2_ros
-  pcl_ros
-  livox_ros_driver
-)
-
-## System dependencies are found with CMake's conventions
-# find_package(Boost REQUIRED COMPONENTS system)
-
-###################################
-## catkin specific configuration ##
-###################################
-## The catkin_package macro generates cmake config files for your package
-## Declare things to be passed to dependent projects
-## INCLUDE_DIRS: uncomment this if your package contains header files
-## LIBRARIES: libraries you create in this project that dependent projects also need
-## CATKIN_DEPENDS: catkin_packages dependent projects also need
-## DEPENDS: system dependencies of this project that dependent projects also need
-catkin_package(
-  INCLUDE_DIRS include
-  LIBRARIES path_manager
-  CATKIN_DEPENDS roscpp std_msgs
-#  DEPENDS system_lib
-)
-
-###########
-## Build ##
-###########
-
-## Specify additional locations of header files
-## Your package locations should be listed before other locations
 include_directories(
-  include
-  ${catkin_INCLUDE_DIRS}
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${PCL_INCLUDE_DIRS}
 )
+
+add_library(path_manager SHARED
+  src/path_manager.cpp
+)
+
+ament_target_dependencies(path_manager
+  rclcpp
+  geometry_msgs
+  nav_msgs
+  sensor_msgs
+  pcl_ros
+  tf2_ros
+  tf2_geometry_msgs
+  livox_ros_driver2
+)
+
 
 add_executable(path_manager_node
   src/path_manager_node.cpp
 )
 
-add_library(path_manager 
-  src/path_manager.cpp
-)
+target_link_libraries(path_manager_node path_manager)
 
-target_link_libraries(path_manager_node
+install(TARGETS
   path_manager
-  ${catkin_LIBRARIES}
+  path_manager_node
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 
-#############
-## Install ##
-#############
-
-# install nodes
-install(TARGETS path_manager_node
-  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}
 )
 
-# install roslaunch files
-install(DIRECTORY launch/
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
-)
+ament_package()

@@ -6,64 +6,79 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "path_manager/path_manager.h"
 #include "path_manager/common.h"
 
-#include <geometry_msgs/PolygonStamped.h>
-#include <geometry_msgs/PoseStamped.h>
-#include "pcl_ros/transforms.h"
+using std::placeholders::_1;
 
 namespace path_manager
 {
 
 template <typename P>
-tf::Vector3 toTfVector3(const P& point) {
-  return tf::Vector3(point.x, point.y, point.z);
+tf2::Vector3 toTfVector3(const P& point) {
+  return tf2::Vector3(point.x, point.y, point.z);
 }
 
-inline double distance(const geometry_msgs::PoseStamped& a, const geometry_msgs::PoseStamped& b) {
+inline double distance(const geometry_msgs::msg::PoseStamped& a, const geometry_msgs::msg::PoseStamped& b) {
   return distance(a.pose.position, b.pose.position);
 }
 
-PathManager::PathManager(ros::NodeHandle& node)
-  : private_nh_("~")
-  , nh_(node)
-  , tf_listener_(tf_buffer_)
+PathManager::PathManager()
+  : Node("path_manager")
+  , tf_listener_(nullptr)
   , path_received_(false)
   , goal_init_(false)
   , adjustment_margin_(0.5)
+  , acceptance_radius_(2.0)
+  , obstacle_dist_threshold_(2.0)
+  , mavros_map_frame_("map")
+  , adjust_goal_(false)
+  , adjust_setpoint_(false)
 {
-  ros::NodeHandle private_nh("~");
 
   // Params
-  private_nh.param<double>("acceptance_radius", acceptance_radius_, 2.0);
-  private_nh.param<double>("obstacle_dist_threshold", obstacle_dist_threshold_, 2.0);
-  private_nh.param<std::string>("mavros_map_frame", mavros_map_frame_, "map");
-  private_nh.param<bool>("adjust_goal", adjust_goal_, false);
-  private_nh.param<bool>("adjust_setpoint", adjust_setpoint_, false);
+  this->declare_parameter("acceptance_radius", acceptance_radius_);
+  this->declare_parameter("obstacle_dist_threshold", obstacle_dist_threshold_);
+  this->declare_parameter("mavros_map_frame", mavros_map_frame_);
+  this->declare_parameter("adjust_goal", adjust_goal_);
+  this->declare_parameter("adjust_setpoint", adjust_setpoint_);  
+  this->declare_parameter("raw_goal_topic", "/goal_raw");
+  this->declare_parameter("path_topic", "/search_node/trajectory_position");
 
   std::string raw_goal_topic, path_topic;
-  private_nh.param<std::string>("raw_goal_topic", raw_goal_topic, "/goal_raw");
-  private_nh.param<std::string>("path_topic", path_topic, "/search_node/trajectory_position");
+  // Params
+  this->get_parameter("acceptance_radius", acceptance_radius_);
+  this->get_parameter("obstacle_dist_threshold", obstacle_dist_threshold_);
+  this->get_parameter("mavros_map_frame", mavros_map_frame_);
+  this->get_parameter("adjust_goal", adjust_goal_);
+  this->get_parameter("adjust_setpoint", adjust_setpoint_);  
+  this->get_parameter("raw_goal_topic", raw_goal_topic);
+  this->get_parameter("path_topic", path_topic);
   
   // Subscribers
-  position_sub_ = nh_.subscribe("mavros/local_position/pose", 1, &PathManager::positionCallback, this);
-  path_sub_ = nh_.subscribe(path_topic, 1, &PathManager::setCurrentPath, this);
-  pointcloud_sub_ = nh_.subscribe("/cloud_registered_map", 1, &PathManager::pointCloudCallback, this);
+  position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("mavros/local_position/pose", 1, std::bind(&PathManager::positionCallback, this, _1));
+  path_sub_ = this->create_subscription<nav_msgs::msg::Path>(path_topic, 1, std::bind(&PathManager::setCurrentPath, this, _1));
+  pointcloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 1, std::bind(&PathManager::pointCloudCallback, this, _1));
+  raw_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(raw_goal_topic, 1, std::bind(&PathManager::rawGoalCallback, this, _1));
 
-  raw_goal_sub_ = nh_.subscribe(raw_goal_topic, 1, &PathManager::rawGoalCallback, this);
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr position_sub_;
+        rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr             path_sub_;
+        rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr  pointcloud_sub_;
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
 
   // Publishers
-  mavros_setpoint_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("mavros/setpoint_position/local", 10);
-  actual_path_pub_ = nh_.advertise<nav_msgs::Path>("actual_path", 10);
-  goal_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/goal", 10);
+  mavros_setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("mavros/setpoint_position/local", 10);
+  actual_path_pub_ = this->create_publisher<nav_msgs::msg::Path>("actual_path", 10);
+  goal_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal", 10);
 }
 
+PathManager::~PathManager() {}
+
 // Sets the current position and checks if the current setpoint has been reached
-void PathManager::positionCallback(const geometry_msgs::PoseStamped& msg) {
+void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
   // Update position
   last_pos_ = msg;
 
   last_pos_.header.frame_id = mavros_map_frame_;
   actual_path_.poses.push_back(last_pos_);
-  actual_path_pub_.publish(actual_path_);
+  actual_path_pub_->publish(actual_path_);
 
   if (path_.size() == 0) {
     path_received_ = false;
@@ -79,8 +94,8 @@ void PathManager::positionCallback(const geometry_msgs::PoseStamped& msg) {
   }
 }
 
-void PathManager::pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &msg) {
-  pcl::fromROSMsg(*msg, cloud_map_);
+void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
+  pcl::fromROSMsg(msg, cloud_map_);
 
   if (goal_init_ && adjust_goal_)
     adjustGoal(current_goal_);
@@ -97,7 +112,7 @@ void PathManager::pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &m
   int plsize = msg->point_num;
   cloud.reserve(plsize);
 
-  for (int i = 0; i < plsize; i++) {
+  for (unsigned i = 0; i < plsize; i++) {
     pcl::PointXYZ added_point;
 
     added_point.x = msg->points[i].x;
@@ -112,16 +127,16 @@ void PathManager::pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &m
     adjustGoal(current_goal_);
 } */
 
-void PathManager::rawGoalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg) {
+void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
   if (adjust_goal_) {
-    adjustGoal(*msg);
+    adjustGoal(msg);
   }
   else {
-    goal_pub_.publish(*msg);
+    goal_pub_->publish(msg);
   }
 }
 
-void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
+void PathManager::adjustGoal(geometry_msgs::msg::PoseStamped goal) {
 
   float closest_point_distance;
   pcl::PointXYZ closest_point;
@@ -132,11 +147,11 @@ void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
   bool goal_above_max = false;
   bool goal_below_min = false;
 
-  if (!ros::param::get("/task_manager/max_alt", max_alt))
-    ROS_WARN("Drone state manager cannot get max altitude param");
+  if (!this->get_parameter("/task_manager/max_alt", max_alt))
+    RCLCPP_WARN(this->get_logger(), "Drone state manager cannot get max altitude param");
 
-  if (!ros::param::get("/task_manager/min_alt", min_alt))
-    ROS_WARN("Drone state manager cannot get min altitude param");
+  if (!this->get_parameter("/task_manager/min_alt", min_alt))
+    RCLCPP_WARN(this->get_logger(), "Drone state manager cannot get min altitude param");
 
   // This is initially a little complicated to understand. What this is doing is
   // alternating checking a point above the original altitude or below it
@@ -144,13 +159,13 @@ void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
 
   // Increasing iterations will check points further and further away from the
   // original altitude, and we will use the closest point that is OK. 
-  int i = 0;
+  unsigned i = 0;
   bool goal_ok = false;
   while (!goal_ok) {
 
     // Break out of loop if we have checked all options and none are OK
     if (goal_above_max && goal_below_min) {
-      ROS_WARN_THROTTLE(1, "Path Manager: Acceptable goal not found");
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Path Manager: Acceptable goal not found");
       break;
     }
 
@@ -189,7 +204,7 @@ void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
       goal_init_ = true;
       if (current_goal_ != goal) {
         current_goal_ = goal;
-        goal_pub_.publish(goal);
+        goal_pub_->publish(goal);
       }
     }
 
@@ -200,31 +215,31 @@ void PathManager::adjustGoal(geometry_msgs::PoseStamped goal) {
 pcl::PointCloud<pcl::PointXYZ> PathManager::transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in) {
   pcl::PointCloud<pcl::PointXYZ> cloud_out;
 
-  geometry_msgs::TransformStamped pcl_map_tf;
+  geometry_msgs::msg::TransformStamped pcl_map_tf;
   try {
-    pcl_map_tf = tf_buffer_.lookupTransform(mavros_map_frame_, cloud_in.header.frame_id, ros::Time(0));
+    pcl_map_tf = tf_buffer_->lookupTransform(mavros_map_frame_, cloud_in.header.frame_id, tf2::TimePointZero);
   }
   catch (tf2::TransformException &ex) {
-    ROS_WARN_THROTTLE(10, "Path Manager: %s",ex.what());
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Path Manager: %s",ex.what());
     return cloud_out;
   }
-  pcl_ros::transformPointCloud(cloud_in, cloud_out, pcl_map_tf.transform);
+  pcl_ros::transformPointCloud(cloud_in, cloud_out, pcl_map_tf);
 
   return cloud_out;
 }
 
-void PathManager::setCurrentPath(const nav_msgs::Path::ConstPtr &path) {
-  std::vector<geometry_msgs::PoseStamped> poses = path->poses;
+void PathManager::setCurrentPath(const nav_msgs::msg::Path &path) {
+  std::vector<geometry_msgs::msg::PoseStamped> poses = path.poses;
 
   path_.clear();
 
   if (poses.size() < 2) {
-    ROS_WARN("Received empty path\n");
+    RCLCPP_WARN(this->get_logger(), "Received empty path");
     return;
   }
   path_received_ = true;
 
-  for (int i = 0; i < poses.size(); ++i) {
+  for (unsigned i = 0; i < poses.size(); ++i) {
     path_.push_back(poses[i]);
   }
 
@@ -232,7 +247,7 @@ void PathManager::setCurrentPath(const nav_msgs::Path::ConstPtr &path) {
   current_setpoint_ = path_[1];
 
   // Calculate orientation to point vehicle towards final destination
-  geometry_msgs::PoseStamped final_setpoint = path_.back();
+  geometry_msgs::msg::PoseStamped final_setpoint = path_.back();
   auto direction_vec = subtractPoints(final_setpoint.pose.position, last_pos_.pose.position);
   yaw_target_ = atan2(direction_vec.y, direction_vec.x);
 
@@ -248,7 +263,7 @@ void PathManager::publishSetpoint() {
   auto setpoint = current_setpoint_;  // The intermediate position sent to Mavros
 
   // Fill setpoint data
-  setpoint.header.stamp = ros::Time::now();
+  setpoint.header.stamp = this->get_clock()->now();
   setpoint.header.frame_id = mavros_map_frame_;
   setpoint.pose = current_setpoint_.pose;
 
@@ -257,7 +272,7 @@ void PathManager::publishSetpoint() {
   tf2::convert(setpoint_q, setpoint.pose.orientation);
 
   // Publish setpoint to Mavros
-  mavros_setpoint_pub_.publish(setpoint);
+  mavros_setpoint_pub_->publish(setpoint);
 }
 
 bool PathManager::isCloseToSetpoint() {
@@ -275,7 +290,7 @@ void PathManager::adjustSetpoint() {
   // Check if setpoint is within our obstacle distance threshold to its closest point in the PCL.
   // If so, adjust setpoint so that it is outside threshold, but as near as possible to original setpoint
   if (closest_point_distance < obstacle_dist_threshold_) {
-    ROS_WARN_THROTTLE(1, "Setpoint inside obstacle distance threshold, adjusting setpoint");
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Setpoint inside obstacle distance threshold, adjusting setpoint");
     float scale_factor = obstacle_dist_threshold_ / closest_point_distance;
 
     float dist_x = current_setpoint_.pose.position.x - closest_point.x;
@@ -288,7 +303,7 @@ void PathManager::adjustSetpoint() {
   }
 }
 
-void PathManager::findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ> cloud, geometry_msgs::Point point_in, 
+void PathManager::findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ> cloud, geometry_msgs::msg::Point point_in, 
                                            pcl::PointXYZ &closest_point, float &closest_point_distance) {
 
   closest_point_distance = INFINITY;

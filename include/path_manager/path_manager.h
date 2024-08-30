@@ -6,35 +6,34 @@ Author: Erin Linebarger <erin@robotics88.com>
 #ifndef PATH_MANAGER_H_
 #define PATH_MANAGER_H_
 
-#include <ros/ros.h>
+#include "rclcpp/rclcpp.hpp"
 
-#include <geometry_msgs/PoseStamped.h>
-#include <nav_msgs/Path.h>
-#include <sensor_msgs/PointCloud2.h>
-#include <tf/transform_listener.h>
-#include <tf2_ros/transform_listener.h>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
-#include <livox_ros_driver/CustomMsg.h>
-#include <pcl_ros/point_cloud.h>
-
+#include "geometry_msgs/msg/polygon_stamped.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
+#include "nav_msgs/msg/path.hpp"
+#include "sensor_msgs/msg/point_cloud2.hpp"
+#include "tf2_ros/transform_listener.h"
+#include "tf2_ros/buffer.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "livox_ros_driver2/msg/custom_msg.hpp"
+#include "pcl_conversions/pcl_conversions.h"
+#include "pcl_ros/transforms.hpp"
+#include "pcl/point_cloud.h"
 
 namespace path_manager {
 /**
  * @class PathManager
  * @brief The PathManager class handles things related to the path of the drone, both exploration goals and path management
  */
-class PathManager {
-
+class PathManager : public rclcpp::Node
+{
     public:
-        PathManager(ros::NodeHandle& node);
-        ~PathManager(){};
+        PathManager();
+        ~PathManager();
 
     private:
-        ros::NodeHandle private_nh_;
-        ros::NodeHandle nh_;
-
-        tf2_ros::Buffer tf_buffer_;
-        tf2_ros::TransformListener tf_listener_;
+        std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+        std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
         std::string mavros_map_frame_;
 
@@ -43,15 +42,15 @@ class PathManager {
         bool path_received_;
         bool adjust_goal_;
         bool adjust_setpoint_;
-        geometry_msgs::PoseStamped last_pos_;
+        geometry_msgs::msg::PoseStamped last_pos_;
         pcl::PointCloud<pcl::PointXYZ> cloud_map_;
 
-        nav_msgs::Path actual_path_;
-        geometry_msgs::PoseStamped current_setpoint_;
-        geometry_msgs::PoseStamped last_setpoint_;
-        std::vector<geometry_msgs::PoseStamped> path_;
+        nav_msgs::msg::Path actual_path_;
+        geometry_msgs::msg::PoseStamped current_setpoint_;
+        geometry_msgs::msg::PoseStamped last_setpoint_;
+        std::vector<geometry_msgs::msg::PoseStamped> path_;
 
-        geometry_msgs::PoseStamped current_goal_;
+        geometry_msgs::msg::PoseStamped current_goal_;
         bool goal_init_;
         float adjustment_margin_;
 
@@ -59,27 +58,28 @@ class PathManager {
 
         std::string frame_id_;
 
-        ros::Subscriber position_sub_;
-        ros::Subscriber path_sub_;
-        ros::Subscriber pointcloud_sub_;
-        ros::Subscriber raw_goal_sub_;
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr position_sub_;
+        rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr             path_sub_;
+        rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr  pointcloud_sub_;
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
 
-        ros::Publisher mavros_setpoint_pub_;
-        ros::Publisher actual_path_pub_;
-        ros::Publisher goal_pub_;
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr mavros_setpoint_pub_;
+        rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr             actual_path_pub_;
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pub_;
 
-        void positionCallback(const geometry_msgs::PoseStamped& msg);
-        void pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr &msg);
+        void positionCallback(const geometry_msgs::msg::PoseStamped &msg);
+        void pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg);
         // void livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
-        void rawGoalCallback(const geometry_msgs::PoseStamped::ConstPtr &msg);
+        void rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg);
+
         pcl::PointCloud<pcl::PointXYZ> transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in);
-        void setCurrentPath(const nav_msgs::Path::ConstPtr &path);
+        void setCurrentPath(const nav_msgs::msg::Path &path);
         void publishSetpoint();
         bool isCloseToSetpoint();
         void adjustSetpoint();
-        void findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ> cloud, geometry_msgs::Point point_in, 
+        void findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ> cloud, geometry_msgs::msg::Point point_in, 
                                               pcl::PointXYZ &closest_point, float &closest_point_distance);
-        void adjustGoal(geometry_msgs::PoseStamped goal);
+        void adjustGoal(geometry_msgs::msg::PoseStamped goal);
 };
 
 }
