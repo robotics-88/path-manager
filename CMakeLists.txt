@@ -20,6 +20,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(livox_ros_driver2 REQUIRED)
 find_package(PCL REQUIRED)
+find_package(task_manager REQUIRED)
 
 include_directories(
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -40,6 +41,7 @@ ament_target_dependencies(path_manager
   tf2_ros
   tf2_geometry_msgs
   livox_ros_driver2
+  task_manager
 )
 
 

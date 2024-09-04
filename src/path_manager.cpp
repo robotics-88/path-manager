@@ -5,6 +5,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include "path_manager/path_manager.h"
 #include "path_manager/common.h"
+#include "task_manager/decco_utilities.h"
 
 using std::placeholders::_1;
 
@@ -59,9 +60,9 @@ PathManager::PathManager()
   raw_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(raw_goal_topic, 1, std::bind(&PathManager::rawGoalCallback, this, _1));
 
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr position_sub_;
-        rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr             path_sub_;
-        rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr  pointcloud_sub_;
-        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
+  rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr             path_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr   pointcloud_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
 
   // Publishers
   mavros_setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("mavros/setpoint_position/local", 10);
@@ -84,6 +85,11 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
     path_received_ = false;
   }
 
+  if (isCloseToSetpoint()) {
+    sub_goals_.erase(sub_goals_.begin());
+  }
+
+
   // Check if we are close enough to current setpoint to get the next part of the
   // path. Do as a while loop so that we publish the furthest setpoint that is still within the acceptance radius
   while (path_.size() > 0 && isCloseToSetpoint()) {
@@ -103,6 +109,7 @@ void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
 
 // Currently unused but may want in future
 /* void PathManager::livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg) {
+
 
   pcl::PointCloud<pcl::PointXYZ> cloud;
 
@@ -128,12 +135,36 @@ void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
 } */
 
 void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
+
+  sub_goals_ = segmentGoal(msg);
+
+  geometry_msgs::msg::PoseStamped goal = sub_goals_.at(0);
+
   if (adjust_goal_) {
-    adjustGoal(msg);
+    adjustGoal(goal);
   }
   else {
-    goal_pub_->publish(msg);
+    goal_pub_->publish(goal);
   }
+}
+
+std::vector<geometry_msgs::msg::PoseStamped> PathManager::segmentGoal(geometry_msgs::msg::PoseStamped goal) {
+  double distance = decco_utilities::distance_xy(last_pos_.pose.position, goal.pose.position);
+  int num_segments = std::ceil(distance / 5.0);
+    
+  std::vector<geometry_msgs::msg::PoseStamped> sub_goals;
+
+  // Calculate and store the interpolated points
+  for (int i = 0; i <= num_segments; ++i) {
+    geometry_msgs::msg::PoseStamped Pi;
+    double t = static_cast<double>(i) / static_cast<double>(num_segments);
+    Pi.pose.position.x = last_pos_.pose.position.x + t * (goal.pose.position.x - last_pos_.pose.position.x);
+    Pi.pose.position.y = last_pos_.pose.position.y + t * (goal.pose.position.y - last_pos_.pose.position.y);
+    Pi.pose.position.z = last_pos_.pose.position.z + t * (goal.pose.position.z - last_pos_.pose.position.z);
+
+    sub_goals.push_back(Pi);
+  }
+  return sub_goals;
 }
 
 void PathManager::adjustGoal(geometry_msgs::msg::PoseStamped goal) {

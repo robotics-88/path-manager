@@ -24,6 +24,7 @@
   <depend>mavros_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>task_manager</depend>
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>livox_ros_driver2</depend>
