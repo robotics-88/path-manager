@@ -57,6 +57,8 @@ PathManager::PathManager()
   position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("mavros/local_position/pose", 1, std::bind(&PathManager::positionCallback, this, _1));
   path_sub_ = this->create_subscription<nav_msgs::msg::Path>(path_topic, 1, std::bind(&PathManager::setCurrentPath, this, _1));
   pointcloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 1, std::bind(&PathManager::pointCloudCallback, this, _1));
+
+  RCLCPP_INFO(this->get_logger(), "Raw goal topic: %s", raw_goal_topic.c_str());
   raw_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(raw_goal_topic, 1, std::bind(&PathManager::rawGoalCallback, this, _1));
 
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr position_sub_;
@@ -85,8 +87,14 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
     path_received_ = false;
   }
 
-  if (isCloseToSetpoint()) {
+  if (sub_goals_.size() > 0 && isCloseToGoal()) {
     sub_goals_.erase(sub_goals_.begin());
+    current_goal_ = sub_goals_.at(0);
+    if (goal_init_ && adjust_goal_) {
+      adjustGoal(current_goal_);
+    }
+    // Republish goal here regardless of if it needs adjustment
+    goal_pub_->publish(current_goal_);
   }
 
 
@@ -103,8 +111,12 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
 void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
   pcl::fromROSMsg(msg, cloud_map_);
 
-  if (goal_init_ && adjust_goal_)
-    adjustGoal(current_goal_);
+  if (goal_init_ && adjust_goal_) {
+    if (adjustGoal(current_goal_)) {
+      std::cout << "Publishing goal from pointcloud\n";
+      goal_pub_->publish(current_goal_);
+    }
+  }
 }
 
 // Currently unused but may want in future
@@ -136,38 +148,43 @@ void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
 
 void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
 
+  RCLCPP_INFO(this->get_logger(), "Received goal");
+
   sub_goals_ = segmentGoal(msg);
 
-  geometry_msgs::msg::PoseStamped goal = sub_goals_.at(0);
+  current_goal_ = sub_goals_.at(0);
 
   if (adjust_goal_) {
-    adjustGoal(goal);
+    adjustGoal(current_goal_);
   }
-  else {
-    goal_pub_->publish(goal);
-  }
+  
+  std::cout << "Publishing goal from callback\n";
+  goal_pub_->publish(current_goal_);
 }
 
 std::vector<geometry_msgs::msg::PoseStamped> PathManager::segmentGoal(geometry_msgs::msg::PoseStamped goal) {
   double distance = decco_utilities::distance_xy(last_pos_.pose.position, goal.pose.position);
+
+  RCLCPP_INFO(this->get_logger(), "Distance: %f", distance);
   int num_segments = std::ceil(distance / 5.0);
-    
+
   std::vector<geometry_msgs::msg::PoseStamped> sub_goals;
 
   // Calculate and store the interpolated points
-  for (int i = 0; i <= num_segments; ++i) {
+  for (int i = 1; i <= num_segments; ++i) {
     geometry_msgs::msg::PoseStamped Pi;
     double t = static_cast<double>(i) / static_cast<double>(num_segments);
     Pi.pose.position.x = last_pos_.pose.position.x + t * (goal.pose.position.x - last_pos_.pose.position.x);
     Pi.pose.position.y = last_pos_.pose.position.y + t * (goal.pose.position.y - last_pos_.pose.position.y);
     Pi.pose.position.z = last_pos_.pose.position.z + t * (goal.pose.position.z - last_pos_.pose.position.z);
 
+    RCLCPP_INFO(this->get_logger(), "Goal %i Pose x: %f", i, Pi.pose.position.x);
     sub_goals.push_back(Pi);
   }
   return sub_goals;
 }
 
-void PathManager::adjustGoal(geometry_msgs::msg::PoseStamped goal) {
+bool PathManager::adjustGoal(geometry_msgs::msg::PoseStamped goal) {
 
   float closest_point_distance;
   pcl::PointXYZ closest_point;
@@ -235,12 +252,14 @@ void PathManager::adjustGoal(geometry_msgs::msg::PoseStamped goal) {
       goal_init_ = true;
       if (current_goal_ != goal) {
         current_goal_ = goal;
-        goal_pub_->publish(goal);
+        // Returning true indicates that goal has been adjusted
+        return true;
       }
     }
 
     i++;
   }
+  return false;
 }
 
 pcl::PointCloud<pcl::PointXYZ> PathManager::transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in) {
@@ -304,6 +323,10 @@ void PathManager::publishSetpoint() {
 
   // Publish setpoint to Mavros
   mavros_setpoint_pub_->publish(setpoint);
+}
+
+bool PathManager::isCloseToGoal() {
+  return distance(last_pos_, current_goal_) < acceptance_radius_;
 }
 
 bool PathManager::isCloseToSetpoint() {

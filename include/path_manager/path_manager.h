@@ -81,7 +81,9 @@ class PathManager : public rclcpp::Node
         void findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ> cloud, geometry_msgs::msg::Point point_in, 
                                               pcl::PointXYZ &closest_point, float &closest_point_distance);
         std::vector<geometry_msgs::msg::PoseStamped> segmentGoal(geometry_msgs::msg::PoseStamped goal);
-        void adjustGoal(geometry_msgs::msg::PoseStamped goal);
+
+        bool isCloseToGoal();
+        bool adjustGoal(geometry_msgs::msg::PoseStamped goal);
 };
 
 }
