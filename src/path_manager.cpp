@@ -54,11 +54,9 @@ PathManager::PathManager()
   this->get_parameter("path_topic", path_topic);
   
   // Subscribers
-  position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("mavros/local_position/pose", 1, std::bind(&PathManager::positionCallback, this, _1));
+  position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/local_position/pose", rclcpp::SensorDataQoS(), std::bind(&PathManager::positionCallback, this, _1));
   path_sub_ = this->create_subscription<nav_msgs::msg::Path>(path_topic, 1, std::bind(&PathManager::setCurrentPath, this, _1));
   pointcloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 1, std::bind(&PathManager::pointCloudCallback, this, _1));
-
-  RCLCPP_INFO(this->get_logger(), "Raw goal topic: %s", raw_goal_topic.c_str());
   raw_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(raw_goal_topic, 1, std::bind(&PathManager::rawGoalCallback, this, _1));
 
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr position_sub_;
@@ -67,7 +65,7 @@ PathManager::PathManager()
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
 
   // Publishers
-  mavros_setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("mavros/setpoint_position/local", 10);
+  mavros_setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/setpoint_position/local", rclcpp::SensorDataQoS());
   actual_path_pub_ = this->create_publisher<nav_msgs::msg::Path>("actual_path", 10);
   goal_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal", 10);
 }
@@ -87,7 +85,7 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
     path_received_ = false;
   }
 
-  if (sub_goals_.size() > 0 && isCloseToGoal()) {
+  if (sub_goals_.size() > 1 && isCloseToGoal()) {
     sub_goals_.erase(sub_goals_.begin());
     current_goal_ = sub_goals_.at(0);
     if (goal_init_ && adjust_goal_) {
@@ -158,14 +156,13 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
     adjustGoal(current_goal_);
   }
   
-  std::cout << "Publishing goal from callback\n";
   goal_pub_->publish(current_goal_);
 }
 
 std::vector<geometry_msgs::msg::PoseStamped> PathManager::segmentGoal(geometry_msgs::msg::PoseStamped goal) {
+
   double distance = decco_utilities::distance_xy(last_pos_.pose.position, goal.pose.position);
 
-  RCLCPP_INFO(this->get_logger(), "Distance: %f", distance);
   int num_segments = std::ceil(distance / 5.0);
 
   std::vector<geometry_msgs::msg::PoseStamped> sub_goals;
@@ -178,7 +175,6 @@ std::vector<geometry_msgs::msg::PoseStamped> PathManager::segmentGoal(geometry_m
     Pi.pose.position.y = last_pos_.pose.position.y + t * (goal.pose.position.y - last_pos_.pose.position.y);
     Pi.pose.position.z = last_pos_.pose.position.z + t * (goal.pose.position.z - last_pos_.pose.position.z);
 
-    RCLCPP_INFO(this->get_logger(), "Goal %i Pose x: %f", i, Pi.pose.position.x);
     sub_goals.push_back(Pi);
   }
   return sub_goals;
@@ -279,6 +275,7 @@ pcl::PointCloud<pcl::PointXYZ> PathManager::transformCloudToMapFrame(pcl::PointC
 }
 
 void PathManager::setCurrentPath(const nav_msgs::msg::Path &path) {
+
   std::vector<geometry_msgs::msg::PoseStamped> poses = path.poses;
 
   path_.clear();
