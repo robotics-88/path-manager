@@ -15,6 +15,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(mavros_msgs REQUIRED)
+find_package(messages_88 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(pcl_ros REQUIRED)
@@ -35,6 +36,7 @@ add_library(path_manager SHARED
 ament_target_dependencies(path_manager
   rclcpp
   geometry_msgs
+  messages_88
   nav_msgs
   sensor_msgs
   pcl_ros

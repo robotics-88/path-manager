@@ -16,6 +16,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "tf2_ros/buffer.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "livox_ros_driver2/msg/custom_msg.hpp"
+#include "messages_88/srv/get_map_data.hpp"
 #include "pcl_conversions/pcl_conversions.h"
 #include "pcl_ros/transforms.hpp"
 #include "pcl/point_cloud.h"
@@ -84,6 +85,7 @@ class PathManager : public rclcpp::Node
 
         bool isCloseToGoal();
         bool adjustGoal(geometry_msgs::msg::PoseStamped goal);
+        void adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position);
 };
 
 }
