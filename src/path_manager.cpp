@@ -33,6 +33,7 @@ PathManager::PathManager()
   , mavros_map_frame_("map")
   , adjust_goal_(false)
   , adjust_setpoint_(false)
+  , target_altitude_(2.0)
 {
 
   // Params
@@ -44,6 +45,7 @@ PathManager::PathManager()
   this->declare_parameter("raw_goal_topic", "/goal_raw");
   this->declare_parameter("path_topic", "/search_node/trajectory_position");
   this->declare_parameter("percent_above_thresh", percent_above_threshold_);
+  this->declare_parameter("default_alt", target_altitude_);
 
   std::string raw_goal_topic, path_topic;
   // Params
@@ -55,6 +57,7 @@ PathManager::PathManager()
   this->get_parameter("raw_goal_topic", raw_goal_topic);
   this->get_parameter("path_topic", path_topic);
   this->get_parameter("percent_above_thresh", percent_above_threshold_);
+  this->get_parameter("default_alt", target_altitude_);
   
   // Subscribers
   position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/local_position/pose", rclcpp::SensorDataQoS(), std::bind(&PathManager::positionCallback, this, _1));
@@ -92,7 +95,9 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
   if (sub_goals_.size() > 1 && isCloseToGoal()) {
     sub_goals_.erase(sub_goals_.begin());
     current_goal_ = sub_goals_.at(0);
-    adjustAltitudeVolume(last_pos_.pose.position);
+    double altitude;
+    adjustAltitudeVolume(last_pos_.pose.position, altitude);
+    current_goal_.pose.position.z = altitude;
     if (goal_init_ && adjust_goal_) {
       adjustGoal(current_goal_);
     }
@@ -127,17 +132,30 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
 }
 
 void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position) {
+void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude) {
   std::shared_ptr<rclcpp::Node> get_elevation_node = rclcpp::Node::make_shared("get_elevation_node");
   auto get_elevation_client = get_elevation_node->create_client<messages_88::srv::GetMapData>("/get_map_data");
   auto elevation_req = std::make_shared<messages_88::srv::GetMapData::Request>();
+  elevation_req->map_position = map_position;
+  elevation_req->adjust_params = true;
+  elevation_req->width = 4;
+  elevation_req->height = 4;
 
   auto result = get_elevation_client->async_send_request(elevation_req);
   if (rclcpp::spin_until_future_complete(get_elevation_node, result) ==
       rclcpp::FutureReturnCode::SUCCESS)
   {
-      if (result.get()->success) {
+
+      try
+      {
           RCLCPP_INFO(this->get_logger(), "Got elevation");
-          std::cout << "new elevation target: " << result.get()->target_altitude << std::endl;
+          target_altitude = result.get()->target_altitude;
+          std::cout << "new elevation target: " << target_altitude << std::endl;
+      }
+      catch (const std::exception &e)
+      {
+          target_altitude = target_altitude_;
+          RCLCPP_ERROR(this->get_logger(), "Failed to get elevation result");
       }
       
   } else {
@@ -193,7 +211,9 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
   if (adjust_goal_) {
     adjustGoal(current_goal_);
   }
-  adjustAltitudeVolume(last_pos_.pose.position);
+  double altitude;
+  adjustAltitudeVolume(last_pos_.pose.position, altitude);
+  current_goal_.pose.position.z = altitude;
   publishGoal(current_goal_);
 }
 
