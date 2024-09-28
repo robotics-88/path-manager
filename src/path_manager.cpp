@@ -88,7 +88,9 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
   if (sub_goals_.size() > 1 && isCloseToGoal()) {
     sub_goals_.erase(sub_goals_.begin());
     current_goal_ = sub_goals_.at(0);
-    adjustAltitudeVolume(last_pos_.pose.position);
+    double altitude;
+    adjustAltitudeVolume(last_pos_.pose.position, altitude);
+    current_goal_.pose.position.z = altitude;
     if (goal_init_ && adjust_goal_) {
       adjustGoal(current_goal_);
     }
@@ -107,18 +109,29 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
   }
 }
 
-void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position) {
+void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude) {
   std::shared_ptr<rclcpp::Node> get_elevation_node = rclcpp::Node::make_shared("get_elevation_node");
   auto get_elevation_client = get_elevation_node->create_client<messages_88::srv::GetMapData>("/get_map_data");
   auto elevation_req = std::make_shared<messages_88::srv::GetMapData::Request>();
+  elevation_req->map_position = map_position;
+  elevation_req->adjust_params = true;
+  elevation_req->width = 4;
+  elevation_req->height = 4;
 
   auto result = get_elevation_client->async_send_request(elevation_req);
   if (rclcpp::spin_until_future_complete(get_elevation_node, result) ==
       rclcpp::FutureReturnCode::SUCCESS)
   {
-      if (result.get()->success) {
+
+      try
+      {
           RCLCPP_INFO(this->get_logger(), "Got elevation");
           std::cout << "new elevation target: " << result.get()->target_altitude << std::endl;
+          target_altitude = result.get()->target_altitude;
+      }
+      catch (const std::exception &e)
+      {
+          RCLCPP_ERROR(this->get_logger(), "Failed to get elevation result");
       }
       
   } else {
@@ -175,7 +188,9 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
   if (adjust_goal_) {
     adjustGoal(current_goal_);
   }
-  adjustAltitudeVolume(last_pos_.pose.position);
+  double altitude;
+  adjustAltitudeVolume(last_pos_.pose.position, altitude);
+  current_goal_.pose.position.z = altitude;
   goal_pub_->publish(current_goal_);
 }
 
