@@ -57,6 +57,7 @@ class PathManager : public rclcpp::Node
         float adjustment_margin_;
 
         double yaw_target_;
+        double target_altitude_;
 
         std::string frame_id_;
 

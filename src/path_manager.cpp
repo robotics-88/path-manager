@@ -32,6 +32,7 @@ PathManager::PathManager()
   , mavros_map_frame_("map")
   , adjust_goal_(false)
   , adjust_setpoint_(false)
+  , target_altitude_(2.0)
 {
 
   // Params
@@ -42,6 +43,7 @@ PathManager::PathManager()
   this->declare_parameter("adjust_setpoint", adjust_setpoint_);  
   this->declare_parameter("raw_goal_topic", "/goal_raw");
   this->declare_parameter("path_topic", "/search_node/trajectory_position");
+  this->declare_parameter("default_alt", target_altitude_);
 
   std::string raw_goal_topic, path_topic;
   // Params
@@ -52,6 +54,7 @@ PathManager::PathManager()
   this->get_parameter("adjust_setpoint", adjust_setpoint_);  
   this->get_parameter("raw_goal_topic", raw_goal_topic);
   this->get_parameter("path_topic", path_topic);
+  this->get_parameter("default_alt", target_altitude_);
   
   // Subscribers
   position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/local_position/pose", rclcpp::SensorDataQoS(), std::bind(&PathManager::positionCallback, this, _1));
@@ -126,11 +129,12 @@ void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_posi
       try
       {
           RCLCPP_INFO(this->get_logger(), "Got elevation");
-          std::cout << "new elevation target: " << result.get()->target_altitude << std::endl;
           target_altitude = result.get()->target_altitude;
+          std::cout << "new elevation target: " << target_altitude << std::endl;
       }
       catch (const std::exception &e)
       {
+          target_altitude = target_altitude_;
           RCLCPP_ERROR(this->get_logger(), "Failed to get elevation result");
       }
       
