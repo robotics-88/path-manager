@@ -29,6 +29,7 @@ PathManager::PathManager()
   , adjustment_margin_(0.5)
   , acceptance_radius_(2.0)
   , obstacle_dist_threshold_(2.0)
+  , percent_above_threshold_(0.01)
   , mavros_map_frame_("map")
   , adjust_goal_(false)
   , adjust_setpoint_(false)
@@ -42,6 +43,7 @@ PathManager::PathManager()
   this->declare_parameter("adjust_setpoint", adjust_setpoint_);  
   this->declare_parameter("raw_goal_topic", "/goal_raw");
   this->declare_parameter("path_topic", "/search_node/trajectory_position");
+  this->declare_parameter("percent_above_thresh", percent_above_threshold_);
 
   std::string raw_goal_topic, path_topic;
   // Params
@@ -52,10 +54,12 @@ PathManager::PathManager()
   this->get_parameter("adjust_setpoint", adjust_setpoint_);  
   this->get_parameter("raw_goal_topic", raw_goal_topic);
   this->get_parameter("path_topic", path_topic);
+  this->get_parameter("percent_above_thresh", percent_above_threshold_);
   
   // Subscribers
   position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/local_position/pose", rclcpp::SensorDataQoS(), std::bind(&PathManager::positionCallback, this, _1));
   path_sub_ = this->create_subscription<nav_msgs::msg::Path>(path_topic, 1, std::bind(&PathManager::setCurrentPath, this, _1));
+  percent_above_sub_ = this->create_subscription<std_msgs::msg::Float32>("/pcl_analysis/percent_above", 1, std::bind(&PathManager::percentAboveCallback, this, _1));
   pointcloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 1, std::bind(&PathManager::pointCloudCallback, this, _1));
   raw_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(raw_goal_topic, 1, std::bind(&PathManager::rawGoalCallback, this, _1));
 
@@ -93,7 +97,7 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
       adjustGoal(current_goal_);
     }
     // Republish goal here regardless of if it needs adjustment
-    goal_pub_->publish(current_goal_);
+    publishGoal(current_goal_);
   }
 
 
@@ -104,6 +108,21 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
     current_setpoint_ = path_[0];
     path_.erase(path_.begin());
     publishSetpoint();
+  }
+}
+
+void PathManager::percentAboveCallback(const std_msgs::msg::Float32 &msg) {
+  percent_above_ = msg.data;
+}
+
+void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
+
+  // Determine if open area and path planner is needed
+  if (percent_above_ < percent_above_threshold_ && percent_above_ >= 0.0f) {
+    mavros_setpoint_pub_->publish(goal);
+  }
+  else {
+    goal_pub_->publish(goal);
   }
 }
 
@@ -131,8 +150,7 @@ void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
 
   if (goal_init_ && adjust_goal_) {
     if (adjustGoal(current_goal_)) {
-      std::cout << "Publishing goal from pointcloud\n";
-      goal_pub_->publish(current_goal_);
+      publishGoal(current_goal_);
     }
   }
 }
@@ -176,7 +194,7 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
     adjustGoal(current_goal_);
   }
   adjustAltitudeVolume(last_pos_.pose.position);
-  goal_pub_->publish(current_goal_);
+  publishGoal(current_goal_);
 }
 
 std::vector<geometry_msgs::msg::PoseStamped> PathManager::segmentGoal(geometry_msgs::msg::PoseStamped goal) {

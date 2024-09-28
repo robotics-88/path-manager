@@ -12,6 +12,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
+#include "std_msgs/msg/float32.hpp"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
@@ -40,6 +41,7 @@ class PathManager : public rclcpp::Node
 
         double acceptance_radius_;
         double obstacle_dist_threshold_;
+        float percent_above_threshold_;
         bool path_received_;
         bool adjust_goal_;
         bool adjust_setpoint_;
@@ -58,17 +60,21 @@ class PathManager : public rclcpp::Node
 
         double yaw_target_;
 
+        float percent_above_;
+
         std::string frame_id_;
 
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr position_sub_;
         rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr             path_sub_;
-        rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr  pointcloud_sub_;
+        rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr          percent_above_sub_;
+        rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr   pointcloud_sub_;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
 
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr mavros_setpoint_pub_;
         rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr             actual_path_pub_;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pub_;
 
+        void percentAboveCallback(const std_msgs::msg::Float32 &msg);
         void positionCallback(const geometry_msgs::msg::PoseStamped &msg);
         void pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg);
         // void livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
@@ -85,6 +91,7 @@ class PathManager : public rclcpp::Node
 
         bool isCloseToGoal();
         bool adjustGoal(geometry_msgs::msg::PoseStamped goal);
+        void publishGoal(geometry_msgs::msg::PoseStamped goal);
         void adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position);
 };
 
