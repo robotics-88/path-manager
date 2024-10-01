@@ -97,7 +97,7 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
     sub_goals_.erase(sub_goals_.begin());
     current_goal_ = sub_goals_.at(0);
     double altitude;
-    adjustAltitudeVolume(last_pos_.pose.position, altitude);
+    adjustAltitudeVolume(current_goal_.pose.position, altitude);
     current_goal_.pose.position.z = altitude;
     if (goal_init_ && adjust_goal_) {
       adjustGoal(current_goal_);
@@ -138,8 +138,8 @@ void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_posi
   auto elevation_req = std::make_shared<messages_88::srv::GetMapData::Request>();
   elevation_req->map_position = map_position;
   elevation_req->adjust_params = true;
-  elevation_req->width = 4;
-  elevation_req->height = 4;
+  elevation_req->width = 8;
+  elevation_req->height = 8;
 
   auto result = get_elevation_client->async_send_request(elevation_req);
   if (rclcpp::spin_until_future_complete(get_elevation_node, result) ==
@@ -212,7 +212,7 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
     adjustGoal(current_goal_);
   }
   double altitude;
-  adjustAltitudeVolume(last_pos_.pose.position, altitude);
+  adjustAltitudeVolume(current_goal_.pose.position, altitude);
   current_goal_.pose.position.z = altitude;
   publishGoal(current_goal_);
 }
