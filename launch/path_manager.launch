@@ -2,17 +2,20 @@
     <arg name="mavros_map_frame" default="map"/>
     <arg name="acceptance_radius" default="2.0"/>
     <arg name="obstacle_dist_threshold" default="2.0"/>
-    <arg name="lidar_type" default="4"/>
     <arg name="goal_topic" default="/goal_raw"/>
     <arg name="adjust_goal" default="false"/>
     <arg name="adjust_setpoint" default="false"/>
+    <arg name="adjust_altitude_volume" default="false"/>
+    <arg name="default_alt" default="3.0"/>
 
-    <node pkg="path_manager" type="path_manager_node" respawn="false" name="path_manager" output="screen">
-        <param name="mavros_map_frame" value="$(arg mavros_map_frame)"/>
-        <param name="acceptance_radius" value="$(arg acceptance_radius)"/>
-        <param name="obstacle_dist_threshold" value="$(arg obstacle_dist_threshold)"/>
-        <param name="raw_goal_topic" value="$(arg goal_topic)"/>
-        <param name="adjust_goal" value="$(arg adjust_goal)"/>
-        <param name="adjust_setpoint" value="$(arg adjust_setpoint)"/>
+    <node pkg="path_manager" exec="path_manager_node" namespace="path_manager" output="screen">
+        <param name="mavros_map_frame" value="$(var mavros_map_frame)"/>
+        <param name="acceptance_radius" value="$(var acceptance_radius)"/>
+        <param name="obstacle_dist_threshold" value="$(var obstacle_dist_threshold)"/>
+        <param name="raw_goal_topic" value="$(var goal_topic)"/>
+        <param name="adjust_goal" value="$(var adjust_goal)"/>
+        <param name="adjust_setpoint" value="$(var adjust_setpoint)"/>
+        <param name="adjust_altitude_volume" value="$(var adjust_altitude_volume)"/>
+        <param name="default_alt" value="$(var default_alt)"/>
     </node>
 </launch>
