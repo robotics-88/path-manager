@@ -127,7 +127,7 @@ void PathManager::percentAboveCallback(const std_msgs::msg::Float32 &msg) {
 }
 
 void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
-
+  goal.header.frame_id = mavros_map_frame_; // Path planner doesn't return headers, it seems
   // Determine if open area and path planner is needed
   RCLCPP_INFO(this->get_logger(), "Path manager publishing goal: [%f, %f, %f]", goal.pose.position.x, goal.pose.position.y, goal.pose.position.z);
   if (percent_above_ < percent_above_threshold_ && percent_above_ >= 0.0f) {
