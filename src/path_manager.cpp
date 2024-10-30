@@ -36,6 +36,7 @@ PathManager::PathManager()
   , adjust_setpoint_(false)
   , adjust_altitude_volume_(false)
   , target_altitude_(3.0)
+  , planning_horizon_(6.0)
 {
 
   // Params
@@ -49,6 +50,7 @@ PathManager::PathManager()
   this->declare_parameter("path_topic", "/search_node/trajectory_position");
   this->declare_parameter("percent_above_thresh", percent_above_threshold_);
   this->declare_parameter("default_alt", target_altitude_);
+  this->declare_parameter("planning_horizon", planning_horizon_);
 
   std::string raw_goal_topic, path_topic;
   // Params
@@ -62,6 +64,8 @@ PathManager::PathManager()
   this->get_parameter("path_topic", path_topic);
   this->get_parameter("percent_above_thresh", percent_above_threshold_);
   this->get_parameter("default_alt", target_altitude_);
+  this->get_parameter("planning_horizon", planning_horizon_);
+  planning_horizon_ -= 1; // Subtract 1 for a safety margin to ensure the segmented goals are fully inside the regional cloud
   
   // Subscribers
   position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/local_position/pose", rclcpp::SensorDataQoS(), std::bind(&PathManager::positionCallback, this, _1));
@@ -229,7 +233,7 @@ std::vector<geometry_msgs::msg::PoseStamped> PathManager::segmentGoal(geometry_m
 
   double distance = decco_utilities::distance_xy(last_pos_.pose.position, goal.pose.position);
 
-  int num_segments = std::ceil(distance / 5.0);
+  int num_segments = std::ceil(distance / planning_horizon_);
 
   std::vector<geometry_msgs::msg::PoseStamped> sub_goals;
 
