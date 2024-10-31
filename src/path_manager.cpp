@@ -140,7 +140,7 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
 
 void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude) {
   std::shared_ptr<rclcpp::Node> get_elevation_node = rclcpp::Node::make_shared("get_elevation_node");
-  auto get_elevation_client = get_elevation_node->create_client<messages_88::srv::GetMapData>("/get_map_data");
+  auto get_elevation_client = get_elevation_node->create_client<messages_88::srv::GetMapData>("/task_manager/get_map_data");
   auto elevation_req = std::make_shared<messages_88::srv::GetMapData::Request>();
   elevation_req->map_position = map_position;
   elevation_req->adjust_params = true;
