@@ -213,8 +213,12 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
 
   RCLCPP_INFO(this->get_logger(), "Received goal");
 
-  sub_goals_ = segmentGoal(msg);
-
+  if (do_slam_)
+    sub_goals_ = segmentGoal(msg);
+  else {
+    sub_goals_.push_back(msg);
+  }
+  
   current_goal_ = sub_goals_.at(0);
 
   if (adjust_goal_) {
