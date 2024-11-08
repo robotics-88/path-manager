@@ -93,6 +93,7 @@ class PathManager : public rclcpp::Node
         std::vector<geometry_msgs::msg::PoseStamped> segmentGoal(geometry_msgs::msg::PoseStamped goal);
 
         bool isCloseToGoal();
+        geometry_msgs::msg::PoseStamped exploreGoal(const geometry_msgs::msg::PoseStamped goal);
         bool adjustGoal(geometry_msgs::msg::PoseStamped goal);
         void publishGoal(geometry_msgs::msg::PoseStamped goal);
         void adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude);

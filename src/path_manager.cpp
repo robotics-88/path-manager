@@ -7,6 +7,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "path_manager/common.h"
 #include "task_manager/decco_utilities.h"
 
+#include "messages_88/srv/explore_goal.hpp"
+
 using std::placeholders::_1;
 
 namespace path_manager
@@ -103,14 +105,15 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
   if (sub_goals_.size() > 1 && isCloseToGoal()) {
     sub_goals_.erase(sub_goals_.begin());
     current_goal_ = sub_goals_.at(0);
-    if (adjust_altitude_volume_) {
-      double altitude;
-      adjustAltitudeVolume(current_goal_.pose.position, altitude);
-      current_goal_.pose.position.z = altitude;
-    }
-    if (goal_init_ && adjust_goal_) {
-      adjustGoal(current_goal_);
-    }
+    // if (adjust_altitude_volume_) {
+    //   current_goal_ = exploreGoal(current_goal_);
+    //   double altitude;
+    //   adjustAltitudeVolume(current_goal_.pose.position, altitude);
+    //   current_goal_.pose.position.z = altitude;
+    // }
+    // if (goal_init_ && adjust_goal_) {
+    //   adjustGoal(current_goal_);
+    // }
     // Republish goal here regardless of if it needs adjustment
     publishGoal(current_goal_);
   }
@@ -133,13 +136,60 @@ void PathManager::percentAboveCallback(const std_msgs::msg::Float32 &msg) {
 void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
   goal.header.frame_id = mavros_map_frame_; // Path planner doesn't return headers, it seems
   // Determine if open area and path planner is needed
-  RCLCPP_INFO(this->get_logger(), "Path manager publishing goal: [%f, %f, %f]", goal.pose.position.x, goal.pose.position.y, goal.pose.position.z);
   if (percent_above_ < percent_above_threshold_ && percent_above_ >= 0.0f) {
+    if (adjust_altitude_volume_) {
+      double altitude;
+      adjustAltitudeVolume(current_goal_.pose.position, altitude);
+      current_goal_.pose.position.z = altitude;
+    }
+    RCLCPP_INFO(this->get_logger(), "Path manager publishing MAVROS goal: [%f, %f, %f]", goal.pose.position.x, goal.pose.position.y, goal.pose.position.z);
     mavros_setpoint_pub_->publish(goal);
   }
   else {
+    if (adjust_goal_) {
+      adjustGoal(current_goal_);
+    }
+    if (adjust_altitude_volume_) {
+      current_goal_ = exploreGoal(current_goal_);
+      double altitude;
+      adjustAltitudeVolume(current_goal_.pose.position, altitude);
+      current_goal_.pose.position.z = altitude;
+    }
+    RCLCPP_INFO(this->get_logger(), "Path manager publishing PP goal: [%f, %f, %f]", goal.pose.position.x, goal.pose.position.y, goal.pose.position.z);
     goal_pub_->publish(goal);
   }
+}
+
+geometry_msgs::msg::PoseStamped PathManager::exploreGoal(const geometry_msgs::msg::PoseStamped goal) {
+  std::shared_ptr<rclcpp::Node> get_exploregoal_node = rclcpp::Node::make_shared("get_exploregoal_node");
+  auto get_goal_client = get_exploregoal_node->create_client<messages_88::srv::ExploreGoal>("/explorable_goal");
+  auto goal_req = std::make_shared<messages_88::srv::ExploreGoal::Request>();
+  goal_req->input_goal = goal.pose;
+
+  auto result = get_goal_client->async_send_request(goal_req);
+  geometry_msgs::msg::Pose output_goal;
+  if (rclcpp::spin_until_future_complete(get_exploregoal_node, result) ==
+      rclcpp::FutureReturnCode::SUCCESS)
+  {
+
+      try
+      {
+          output_goal = result.get()->output_goal;
+          RCLCPP_INFO(this->get_logger(), "Got explore goal");
+      }
+      catch (const std::exception &e)
+      {
+          output_goal = goal.pose;
+          RCLCPP_ERROR(this->get_logger(), "Failed to get explore goal result, using unmodified goal");
+      }
+      
+  } else {
+      output_goal = goal.pose;
+      RCLCPP_ERROR(this->get_logger(), "Failed to get explore goal, using unmodified goal");
+  }
+  geometry_msgs::msg::PoseStamped output = goal;
+  output.pose = output_goal;
+  return output;
 }
 
 void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude) {
@@ -217,14 +267,15 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
 
   current_goal_ = sub_goals_.at(0);
 
-  if (adjust_goal_) {
-    adjustGoal(current_goal_);
-  }
-  if (adjust_altitude_volume_) {
-    double altitude;
-    adjustAltitudeVolume(current_goal_.pose.position, altitude);
-    current_goal_.pose.position.z = altitude;
-  }
+  // if (adjust_goal_) {
+  //   adjustGoal(current_goal_);
+  // }
+  // if (adjust_altitude_volume_) {
+  //   current_goal_ = exploreGoal(current_goal_);
+  //   double altitude;
+  //   adjustAltitudeVolume(current_goal_.pose.position, altitude);
+  //   current_goal_.pose.position.z = altitude;
+  // }
 
   publishGoal(current_goal_);
 }
