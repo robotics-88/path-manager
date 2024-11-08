@@ -62,6 +62,7 @@ class PathManager : public rclcpp::Node
 
         double yaw_target_;
         double target_altitude_;
+        double planning_horizon_;
 
         float percent_above_;
 
