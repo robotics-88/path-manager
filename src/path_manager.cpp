@@ -35,6 +35,7 @@ PathManager::PathManager()
   , adjust_goal_(false)
   , adjust_setpoint_(false)
   , adjust_altitude_volume_(false)
+  , do_slam_(true)
   , target_altitude_(3.0)
   , planning_horizon_(6.0)
 {
@@ -50,6 +51,7 @@ PathManager::PathManager()
   this->declare_parameter("path_topic", "/search_node/trajectory_position");
   this->declare_parameter("percent_above_thresh", percent_above_threshold_);
   this->declare_parameter("default_alt", target_altitude_);
+  this->declare_parameter("do_slam", do_slam_);
   this->declare_parameter("planning_horizon", planning_horizon_);
 
   std::string raw_goal_topic, path_topic;
@@ -64,6 +66,7 @@ PathManager::PathManager()
   this->get_parameter("path_topic", path_topic);
   this->get_parameter("percent_above_thresh", percent_above_threshold_);
   this->get_parameter("default_alt", target_altitude_);
+  this->get_parameter("do_slam", do_slam_);
   this->get_parameter("planning_horizon", planning_horizon_);
   planning_horizon_ -= 1; // Subtract 1 for a safety margin to ensure the segmented goals are fully inside the regional cloud
   
@@ -134,7 +137,8 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
   goal.header.frame_id = mavros_map_frame_; // Path planner doesn't return headers, it seems
   // Determine if open area and path planner is needed
   RCLCPP_INFO(this->get_logger(), "Path manager publishing goal: [%f, %f, %f]", goal.pose.position.x, goal.pose.position.y, goal.pose.position.z);
-  if (percent_above_ < percent_above_threshold_ && percent_above_ >= 0.0f) {
+  bool open_area = percent_above_ < percent_above_threshold_ && percent_above_ >= 0.0f;
+  if (open_area || !do_slam_) {
     mavros_setpoint_pub_->publish(goal);
   }
   else {
@@ -214,7 +218,7 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
   RCLCPP_INFO(this->get_logger(), "Received goal");
 
   sub_goals_ = segmentGoal(msg);
-
+  
   current_goal_ = sub_goals_.at(0);
 
   if (adjust_goal_) {
