@@ -158,7 +158,11 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
     mavros_setpoint_pub_->publish(goal);
   }
   else {
-    requestPath(goal);
+    // Request path with 3 attempts
+    for (unsigned i = 0; i < 3; i++) {
+      if (requestPath(goal))
+        break;
+    }
   }
 }
 
