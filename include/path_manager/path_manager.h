@@ -69,14 +69,12 @@ class PathManager : public rclcpp::Node
         std::string frame_id_;
 
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr position_sub_;
-        rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr             path_sub_;
         rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr          percent_above_sub_;
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr   pointcloud_sub_;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
 
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr mavros_setpoint_pub_;
         rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr             actual_path_pub_;
-        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pub_;
 
         void percentAboveCallback(const std_msgs::msg::Float32 &msg);
         void positionCallback(const geometry_msgs::msg::PoseStamped &msg);

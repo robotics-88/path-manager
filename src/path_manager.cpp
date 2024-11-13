@@ -51,13 +51,12 @@ PathManager::PathManager()
   this->declare_parameter("adjust_setpoint", adjust_setpoint_);  
   this->declare_parameter("adjust_altitude_volume", adjust_altitude_volume_);  
   this->declare_parameter("raw_goal_topic", "/goal_raw");
-  this->declare_parameter("path_topic", "/search_node/trajectory_position");
   this->declare_parameter("percent_above_thresh", percent_above_threshold_);
   this->declare_parameter("default_alt", target_altitude_);
   this->declare_parameter("do_slam", do_slam_);
   this->declare_parameter("planning_horizon", planning_horizon_);
 
-  std::string raw_goal_topic, path_topic;
+  std::string raw_goal_topic;
   // Params
   this->get_parameter("acceptance_radius", acceptance_radius_);
   this->get_parameter("obstacle_dist_threshold", obstacle_dist_threshold_);
@@ -66,7 +65,6 @@ PathManager::PathManager()
   this->get_parameter("adjust_setpoint", adjust_setpoint_);  
   this->get_parameter("adjust_altitude_volume", adjust_altitude_volume_);  
   this->get_parameter("raw_goal_topic", raw_goal_topic);
-  this->get_parameter("path_topic", path_topic);
   this->get_parameter("percent_above_thresh", percent_above_threshold_);
   this->get_parameter("default_alt", target_altitude_);
   this->get_parameter("do_slam", do_slam_);
@@ -75,20 +73,13 @@ PathManager::PathManager()
   
   // Subscribers
   position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/local_position/pose", rclcpp::SensorDataQoS(), std::bind(&PathManager::positionCallback, this, _1));
-  //path_sub_ = this->create_subscription<nav_msgs::msg::Path>(path_topic, 1, std::bind(&PathManager::setCurrentPath, this, _1));
   percent_above_sub_ = this->create_subscription<std_msgs::msg::Float32>("/pcl_analysis/percent_above", 1, std::bind(&PathManager::percentAboveCallback, this, _1));
   pointcloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 1, std::bind(&PathManager::pointCloudCallback, this, _1));
   raw_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(raw_goal_topic, 1, std::bind(&PathManager::rawGoalCallback, this, _1));
 
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr position_sub_;
-  rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr             path_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr   pointcloud_sub_;
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
-
   // Publishers
   mavros_setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/setpoint_position/local", 10);
   actual_path_pub_ = this->create_publisher<nav_msgs::msg::Path>("actual_path", 10);
-  goal_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal", 10);
 }
 
 PathManager::~PathManager() {}
