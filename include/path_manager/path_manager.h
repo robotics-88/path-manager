@@ -96,6 +96,7 @@ class PathManager : public rclcpp::Node
         bool isCloseToGoal();
         bool adjustGoal(geometry_msgs::msg::PoseStamped goal);
         void publishGoal(geometry_msgs::msg::PoseStamped goal);
+        bool requestPath(const geometry_msgs::msg::PoseStamped goal);
         void adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude);
 };
 
