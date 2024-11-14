@@ -6,9 +6,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "path_manager/path_manager.h"
 #include "path_manager/common.h"
 #include "task_manager/decco_utilities.h"
+#include "messages_88/srv/request_goal.hpp"
 #include "messages_88/srv/request_path.hpp"
-
-#include "messages_88/srv/explore_goal.hpp"
 
 using std::placeholders::_1;
 
@@ -218,8 +217,8 @@ bool PathManager::requestPath(const geometry_msgs::msg::PoseStamped goal) {
 
 geometry_msgs::msg::PoseStamped PathManager::exploreGoal(const geometry_msgs::msg::PoseStamped goal) {
   std::shared_ptr<rclcpp::Node> get_exploregoal_node = rclcpp::Node::make_shared("get_exploregoal_node");
-  auto get_goal_client = get_exploregoal_node->create_client<messages_88::srv::ExploreGoal>("/explorable_goal");
-  auto goal_req = std::make_shared<messages_88::srv::ExploreGoal::Request>();
+  auto get_goal_client = get_exploregoal_node->create_client<messages_88::srv::RequestGoal>("/explorable_goal");
+  auto goal_req = std::make_shared<messages_88::srv::RequestGoal::Request>();
   goal_req->input_goal = goal.pose;
 
   auto result = get_goal_client->async_send_request(goal_req);
