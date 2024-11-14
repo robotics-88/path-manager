@@ -6,10 +6,13 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "path_manager/path_manager.h"
 #include "path_manager/common.h"
 #include "task_manager/decco_utilities.h"
+#include "messages_88/srv/request_path.hpp"
 
 #include "messages_88/srv/explore_goal.hpp"
 
 using std::placeholders::_1;
+
+using namespace std::chrono_literals;
 
 namespace path_manager
 {
@@ -37,6 +40,7 @@ PathManager::PathManager()
   , adjust_goal_(false)
   , adjust_setpoint_(false)
   , adjust_altitude_volume_(false)
+  , do_slam_(true)
   , target_altitude_(3.0)
   , planning_horizon_(6.0)
 {
@@ -49,12 +53,12 @@ PathManager::PathManager()
   this->declare_parameter("adjust_setpoint", adjust_setpoint_);  
   this->declare_parameter("adjust_altitude_volume", adjust_altitude_volume_);  
   this->declare_parameter("raw_goal_topic", "/goal_raw");
-  this->declare_parameter("path_topic", "/search_node/trajectory_position");
   this->declare_parameter("percent_above_thresh", percent_above_threshold_);
   this->declare_parameter("default_alt", target_altitude_);
+  this->declare_parameter("do_slam", do_slam_);
   this->declare_parameter("planning_horizon", planning_horizon_);
 
-  std::string raw_goal_topic, path_topic;
+  std::string raw_goal_topic;
   // Params
   this->get_parameter("acceptance_radius", acceptance_radius_);
   this->get_parameter("obstacle_dist_threshold", obstacle_dist_threshold_);
@@ -63,28 +67,21 @@ PathManager::PathManager()
   this->get_parameter("adjust_setpoint", adjust_setpoint_);  
   this->get_parameter("adjust_altitude_volume", adjust_altitude_volume_);  
   this->get_parameter("raw_goal_topic", raw_goal_topic);
-  this->get_parameter("path_topic", path_topic);
   this->get_parameter("percent_above_thresh", percent_above_threshold_);
   this->get_parameter("default_alt", target_altitude_);
+  this->get_parameter("do_slam", do_slam_);
   this->get_parameter("planning_horizon", planning_horizon_);
   planning_horizon_ -= 1; // Subtract 1 for a safety margin to ensure the segmented goals are fully inside the regional cloud
   
   // Subscribers
   position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/local_position/pose", rclcpp::SensorDataQoS(), std::bind(&PathManager::positionCallback, this, _1));
-  path_sub_ = this->create_subscription<nav_msgs::msg::Path>(path_topic, 1, std::bind(&PathManager::setCurrentPath, this, _1));
   percent_above_sub_ = this->create_subscription<std_msgs::msg::Float32>("/pcl_analysis/percent_above", 1, std::bind(&PathManager::percentAboveCallback, this, _1));
   pointcloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 1, std::bind(&PathManager::pointCloudCallback, this, _1));
   raw_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(raw_goal_topic, 1, std::bind(&PathManager::rawGoalCallback, this, _1));
 
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr position_sub_;
-  rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr             path_sub_;
-  rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr   pointcloud_sub_;
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
-
   // Publishers
   mavros_setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/setpoint_position/local", 10);
   actual_path_pub_ = this->create_publisher<nav_msgs::msg::Path>("actual_path", 10);
-  goal_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal", 10);
 }
 
 PathManager::~PathManager() {}
@@ -102,9 +99,17 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
     path_received_ = false;
   }
 
+  // Publish next goal when we have reached current one
   if (sub_goals_.size() > 1 && isCloseToGoal()) {
+
+    // Remove sub goal from list, and set new current goal. 
     sub_goals_.erase(sub_goals_.begin());
     current_goal_ = sub_goals_.at(0);
+
+    // Update yaw target for current goal
+    auto direction_vec = subtractPoints(current_goal_.pose.position, last_pos_.pose.position);
+    yaw_target_ = atan2(direction_vec.y, direction_vec.x);
+
     // if (adjust_altitude_volume_) {
     //   current_goal_ = exploreGoal(current_goal_);
     //   double altitude;
@@ -136,7 +141,13 @@ void PathManager::percentAboveCallback(const std_msgs::msg::Float32 &msg) {
 void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
   goal.header.frame_id = mavros_map_frame_; // Path planner doesn't return headers, it seems
   // Determine if open area and path planner is needed
-  if (percent_above_ < percent_above_threshold_ && percent_above_ >= 0.0f) {
+  bool open_area = percent_above_ < percent_above_threshold_ && percent_above_ >= 0.0f;
+
+  if (open_area || !do_slam_) {
+    // Publish mavros setpoint directly including yaw target if in an open area or not using slam
+    tf2::Quaternion setpoint_q;
+    setpoint_q.setRPY(0.0, 0.0, yaw_target_);
+    tf2::convert(setpoint_q, goal.pose.orientation);
     if (adjust_altitude_volume_) {
       double altitude;
       adjustAltitudeVolume(current_goal_.pose.position, altitude);
@@ -156,8 +167,53 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
       current_goal_.pose.position.z = altitude;
     }
     RCLCPP_INFO(this->get_logger(), "Path manager publishing PP goal: [%f, %f, %f]", goal.pose.position.x, goal.pose.position.y, goal.pose.position.z);
-    goal_pub_->publish(goal);
+    // Request path with 3 attempts
+    for (unsigned i = 0; i < 3; i++) {
+      if (requestPath(goal))
+        break;
+    }
   }
+}
+
+bool PathManager::requestPath(const geometry_msgs::msg::PoseStamped goal) {
+
+  // Request path from path planner
+  std::shared_ptr<rclcpp::Node> node = rclcpp::Node::make_shared("request_path_client");
+  rclcpp::Client<messages_88::srv::RequestPath>::SharedPtr client =
+    node->create_client<messages_88::srv::RequestPath>("/path_planner/request_path");
+
+  while (!client->wait_for_service(1s)) {
+    if (!rclcpp::ok()) {
+      RCLCPP_ERROR(this->get_logger(), "Interrupted while waiting for path planner service. Exiting.");
+      return false;
+    }
+    RCLCPP_INFO(this->get_logger(), "Path planner service not available, waiting again...");
+  }
+
+  auto request = std::make_shared<messages_88::srv::RequestPath::Request>();
+  request->goal = goal;
+
+  auto result = client->async_send_request(request);
+
+  if (rclcpp::spin_until_future_complete(node, result) ==
+    rclcpp::FutureReturnCode::SUCCESS)
+  {
+    auto res_ptr = result.get();
+
+    // If successful, set path
+    if (res_ptr->success) {
+      setCurrentPath(res_ptr->path);
+      return true;
+    }
+    else {
+      RCLCPP_WARN(this->get_logger(), "Path planner failed to create valid path");
+    }
+
+  } else {
+    RCLCPP_ERROR(this->get_logger(), "Failed to call path planner service");
+  }
+
+  return false;
 }
 
 geometry_msgs::msg::PoseStamped PathManager::exploreGoal(const geometry_msgs::msg::PoseStamped goal) {
@@ -264,7 +320,7 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
   RCLCPP_INFO(this->get_logger(), "Received goal");
 
   sub_goals_ = segmentGoal(msg);
-
+  
   current_goal_ = sub_goals_.at(0);
 
   // if (adjust_goal_) {
