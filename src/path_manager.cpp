@@ -6,6 +6,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "path_manager/path_manager.h"
 #include "path_manager/common.h"
 #include "task_manager/decco_utilities.h"
+#include "messages_88/srv/request_goal.hpp"
 #include "messages_88/srv/request_path.hpp"
 
 using std::placeholders::_1;
@@ -108,11 +109,6 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
     auto direction_vec = subtractPoints(current_goal_.pose.position, last_pos_.pose.position);
     yaw_target_ = atan2(direction_vec.y, direction_vec.x);
 
-    if (adjust_altitude_volume_) {
-      double altitude;
-      adjustAltitudeVolume(current_goal_.pose.position, altitude);
-      current_goal_.pose.position.z = altitude;
-    }
     if (goal_init_ && adjust_goal_) {
       adjustGoal(current_goal_);
     }
@@ -136,25 +132,69 @@ void PathManager::percentAboveCallback(const std_msgs::msg::Float32 &msg) {
 }
 
 void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
-  goal.header.frame_id = mavros_map_frame_; // Path planner doesn't return headers, it seems
+  current_goal_.header.frame_id = mavros_map_frame_; // Path planner doesn't return headers, it seems
   // Determine if open area and path planner is needed
-  RCLCPP_INFO(this->get_logger(), "Path manager publishing goal: [%f, %f, %f]", goal.pose.position.x, goal.pose.position.y, goal.pose.position.z);
   bool open_area = percent_above_ < percent_above_threshold_ && percent_above_ >= 0.0f;
 
   if (open_area || !do_slam_) {
+    if (adjust_altitude_volume_) {
+      double altitude;
+      adjustAltitudeVolume(current_goal_.pose.position, altitude);
+      current_goal_.pose.position.z = altitude;
+    }
     // Publish mavros setpoint directly including yaw target if in an open area or not using slam
     tf2::Quaternion setpoint_q;
     setpoint_q.setRPY(0.0, 0.0, yaw_target_);
-    tf2::convert(setpoint_q, goal.pose.orientation);
-    mavros_setpoint_pub_->publish(goal);
+    tf2::convert(setpoint_q, current_goal_.pose.orientation);
+    RCLCPP_INFO(this->get_logger(), "Path manager publishing MAVROS goal: [%f, %f, %f]", current_goal_.pose.position.x, current_goal_.pose.position.y, current_goal_.pose.position.z);
+    mavros_setpoint_pub_->publish(current_goal_);
   }
   else {
+    if (adjust_altitude_volume_) {
+      current_goal_ = requestGoal(current_goal_);
+      double altitude;
+      adjustAltitudeVolume(current_goal_.pose.position, altitude);
+      current_goal_.pose.position.z = altitude;
+    }
     // Request path with 3 attempts
     for (unsigned i = 0; i < 3; i++) {
-      if (requestPath(goal))
+      RCLCPP_INFO(this->get_logger(), "Path manager publishing PLANNER goal: [%f, %f, %f]", current_goal_.pose.position.x, current_goal_.pose.position.y, current_goal_.pose.position.z);
+      if (requestPath(current_goal_))
         break;
     }
   }
+}
+
+geometry_msgs::msg::PoseStamped PathManager::requestGoal(const geometry_msgs::msg::PoseStamped goal) {
+  std::shared_ptr<rclcpp::Node> get_exploregoal_node = rclcpp::Node::make_shared("get_exploregoal_node");
+  auto get_goal_client = get_exploregoal_node->create_client<messages_88::srv::RequestGoal>("/explorable_goal");
+  auto goal_req = std::make_shared<messages_88::srv::RequestGoal::Request>();
+  goal_req->input_goal = goal.pose;
+
+  auto result = get_goal_client->async_send_request(goal_req);
+  geometry_msgs::msg::Pose output_goal;
+  if (rclcpp::spin_until_future_complete(get_exploregoal_node, result) ==
+      rclcpp::FutureReturnCode::SUCCESS)
+  {
+
+      try
+      {
+          output_goal = result.get()->output_goal;
+          RCLCPP_INFO(this->get_logger(), "Got explore goal");
+      }
+      catch (const std::exception &e)
+      {
+          output_goal = goal.pose;
+          RCLCPP_ERROR(this->get_logger(), "Failed to get explore goal result, using unmodified goal");
+      }
+      
+  } else {
+      output_goal = goal.pose;
+      RCLCPP_ERROR(this->get_logger(), "Failed to get explore goal, using unmodified goal");
+  }
+  geometry_msgs::msg::PoseStamped output = goal;
+  output.pose = output_goal;
+  return output;
 }
 
 bool PathManager::requestPath(const geometry_msgs::msg::PoseStamped goal) {
@@ -277,11 +317,6 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
 
   if (adjust_goal_) {
     adjustGoal(current_goal_);
-  }
-  if (adjust_altitude_volume_) {
-    double altitude;
-    adjustAltitudeVolume(current_goal_.pose.position, altitude);
-    current_goal_.pose.position.z = altitude;
   }
 
   publishGoal(current_goal_);
