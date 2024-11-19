@@ -31,7 +31,8 @@ PathManager::PathManager()
   , path_received_(false)
   , goal_init_(false)
   , adjustment_margin_(0.5)
-  , acceptance_radius_(2.0)
+  , setpoint_acceptance_radius_(0.5)
+  , goal_acceptance_radius_(2.0)
   , obstacle_dist_threshold_(2.0)
   , percent_above_(-1.0)
   , percent_above_threshold_(0.01)
@@ -45,7 +46,8 @@ PathManager::PathManager()
 {
 
   // Params
-  this->declare_parameter("acceptance_radius", acceptance_radius_);
+  this->declare_parameter("setpoint_acceptance_radius", setpoint_acceptance_radius_);
+  this->declare_parameter("goal_acceptance_radius", goal_acceptance_radius_);
   this->declare_parameter("obstacle_dist_threshold", obstacle_dist_threshold_);
   this->declare_parameter("mavros_map_frame", mavros_map_frame_);
   this->declare_parameter("adjust_goal", adjust_goal_);
@@ -59,7 +61,8 @@ PathManager::PathManager()
 
   std::string raw_goal_topic;
   // Params
-  this->get_parameter("acceptance_radius", acceptance_radius_);
+  this->get_parameter("setpoint_acceptance_radius", setpoint_acceptance_radius_);
+  this->get_parameter("goal_acceptance_radius", goal_acceptance_radius_);
   this->get_parameter("obstacle_dist_threshold", obstacle_dist_threshold_);
   this->get_parameter("mavros_map_frame", mavros_map_frame_);
   this->get_parameter("adjust_goal", adjust_goal_);
@@ -502,11 +505,11 @@ void PathManager::publishSetpoint() {
 }
 
 bool PathManager::isCloseToGoal() {
-  return distance(last_pos_, current_goal_) < acceptance_radius_;
+  return distance(last_pos_, current_goal_) < goal_acceptance_radius_;
 }
 
 bool PathManager::isCloseToSetpoint() {
-  return distance(last_pos_, current_setpoint_) < acceptance_radius_;
+  return distance(last_pos_, current_setpoint_) < setpoint_acceptance_radius_;
 }
 
 void PathManager::adjustSetpoint() {

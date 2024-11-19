@@ -1,6 +1,7 @@
 <launch>
     <arg name="mavros_map_frame" default="map"/>
-    <arg name="acceptance_radius" default="2.0"/>
+    <arg name="setpoint_acceptance_radius" default="0.5"/>
+    <arg name="goal_acceptance_radius" default="2.0"/>
     <arg name="obstacle_dist_threshold" default="2.0"/>
     <arg name="goal_topic" default="/goal_raw"/>
     <arg name="adjust_goal" default="false"/>
@@ -12,7 +13,8 @@
 
     <node pkg="path_manager" exec="path_manager_node" output="screen">
         <param name="mavros_map_frame" value="$(var mavros_map_frame)"/>
-        <param name="acceptance_radius" value="$(var acceptance_radius)"/>
+        <param name="setpoint_acceptance_radius" value="$(var setpoint_acceptance_radius)"/>
+        <param name="goal_acceptance_radius" value="$(var goal_acceptance_radius)"/>
         <param name="obstacle_dist_threshold" value="$(var obstacle_dist_threshold)"/>
         <param name="raw_goal_topic" value="$(var goal_topic)"/>
         <param name="adjust_goal" value="$(var adjust_goal)"/>
