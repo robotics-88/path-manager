@@ -39,7 +39,8 @@ class PathManager : public rclcpp::Node
 
         std::string mavros_map_frame_;
 
-        double acceptance_radius_;
+        double setpoint_acceptance_radius_;
+        double goal_acceptance_radius_;
         double obstacle_dist_threshold_;
         float percent_above_threshold_;
         bool path_received_;
