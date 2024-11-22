@@ -10,6 +10,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include "geometry_msgs/msg/polygon_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "std_msgs/msg/float32.hpp"
@@ -74,8 +75,9 @@ class PathManager : public rclcpp::Node
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr   pointcloud_sub_;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
 
-        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr mavros_setpoint_pub_;
-        rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr             actual_path_pub_;
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr    mavros_setpoint_pub_;
+        rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr   mavros_velocity_pub_;
+        rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr                actual_path_pub_;
 
         void percentAboveCallback(const std_msgs::msg::Float32 &msg);
         void positionCallback(const geometry_msgs::msg::PoseStamped &msg);

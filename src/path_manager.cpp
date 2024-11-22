@@ -82,6 +82,7 @@ PathManager::PathManager()
 
   // Publishers
   mavros_setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/setpoint_position/local", 10);
+  mavros_velocity_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>("/mavros/setpoint_velocity/cmd_vel", 10);
   actual_path_pub_ = this->create_publisher<nav_msgs::msg::Path>("actual_path", 10);
 }
 
@@ -126,11 +127,15 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
 
   // Check if we are close enough to current setpoint to get the next part of the
   // path. Do as a while loop so that we publish the furthest setpoint that is still within the acceptance radius
-  while (path_.size() > 0 && isCloseToSetpoint()) {
-    last_setpoint_ = current_setpoint_;
-    current_setpoint_ = path_[0];
-    path_.erase(path_.begin());
+  while (path_.size() > 0) {
     publishSetpoint();
+    
+    if (isCloseToSetpoint()) {
+      last_setpoint_ = current_setpoint_;    
+      current_setpoint_ = path_[0];
+      path_.erase(path_.begin());
+    }
+    
   }
 }
 
@@ -453,7 +458,49 @@ void PathManager::publishSetpoint() {
   tf2::convert(setpoint_q, setpoint.pose.orientation);
 
   // Publish setpoint to Mavros
-  mavros_setpoint_pub_->publish(setpoint);
+  // mavros_setpoint_pub_->publish(setpoint);
+
+  // Set velocity vector from difference in current location to point on path.
+  geometry_msgs::msg::Vector3 vec;
+  vec.x = current_setpoint_.pose.position.x - last_pos_.pose.position.x;
+  vec.y = current_setpoint_.pose.position.y - last_pos_.pose.position.y;
+  vec.z = current_setpoint_.pose.position.z - last_pos_.pose.position.z;
+
+  // Normalize vector
+  double mag = sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
+  if (mag == 0.0) {
+    RCLCPP_INFO(this->get_logger(), "Invalid pose/setpoint, not setting velocity command");
+    return;
+  }
+
+  geometry_msgs::msg::Vector3 unit_vec;
+  unit_vec.x = vec.x / mag;
+  unit_vec.y = vec.y / mag;
+  unit_vec.z = vec.z / mag;
+
+
+  // Determine absolute drone speed
+  double speed = 1.0;
+
+  // Calculate distance to end of path. As we approach path end (within threshold), reduce speed
+  double dist_to_end = distance(last_pos_, path_.back());
+  double threshold = 2.0;
+  if (dist_to_end < threshold) {
+    speed *= dist_to_end / threshold;
+  }
+
+  // If at the end of the path, set speed to 0.
+  if (path_.size() == 1) {
+    speed = 0.0;
+  }
+
+  // Apply speed to direction unit vec, and publish as velocity setpoing
+  geometry_msgs::msg::TwistStamped setpoint_vel;
+  setpoint_vel.twist.linear.x = unit_vec.x * speed;
+  setpoint_vel.twist.linear.y = unit_vec.y * speed;
+  setpoint_vel.twist.linear.z = unit_vec.z * speed;
+
+  mavros_velocity_pub_->publish(setpoint_vel);
 }
 
 bool PathManager::isCloseToGoal() {
