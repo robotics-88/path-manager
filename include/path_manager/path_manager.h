@@ -44,8 +44,7 @@ class PathManager : public rclcpp::Node
         double goal_acceptance_radius_;
         double obstacle_dist_threshold_;
         float percent_above_threshold_;
-        bool path_received_;
-        bool adjust_goal_;
+        bool adjust_goal_altitude_;
         bool adjust_setpoint_;
         bool adjust_altitude_volume_;
         bool do_slam_;
@@ -95,7 +94,7 @@ class PathManager : public rclcpp::Node
         std::vector<geometry_msgs::msg::PoseStamped> segmentGoal(geometry_msgs::msg::PoseStamped goal);
 
         bool isCloseToGoal();
-        bool adjustGoal(geometry_msgs::msg::PoseStamped goal);
+        bool adjustGoalAltitude(geometry_msgs::msg::PoseStamped goal);
         void publishGoal(geometry_msgs::msg::PoseStamped goal);
         bool requestPath(const geometry_msgs::msg::PoseStamped goal);
         void adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude);

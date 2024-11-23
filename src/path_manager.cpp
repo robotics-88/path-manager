@@ -27,7 +27,6 @@ inline double distance(const geometry_msgs::msg::PoseStamped& a, const geometry_
 PathManager::PathManager()
   : Node("path_manager")
   , tf_listener_(nullptr)
-  , path_received_(false)
   , goal_init_(false)
   , adjustment_margin_(0.5)
   , setpoint_acceptance_radius_(0.5)
@@ -36,7 +35,7 @@ PathManager::PathManager()
   , percent_above_(-1.0)
   , percent_above_threshold_(0.01)
   , mavros_map_frame_("map")
-  , adjust_goal_(false)
+  , adjust_goal_altitude_(false)
   , adjust_setpoint_(false)
   , adjust_altitude_volume_(false)
   , do_slam_(true)
@@ -49,7 +48,7 @@ PathManager::PathManager()
   this->declare_parameter("goal_acceptance_radius", goal_acceptance_radius_);
   this->declare_parameter("obstacle_dist_threshold", obstacle_dist_threshold_);
   this->declare_parameter("mavros_map_frame", mavros_map_frame_);
-  this->declare_parameter("adjust_goal", adjust_goal_);
+  this->declare_parameter("adjust_goal", adjust_goal_altitude_);
   this->declare_parameter("adjust_setpoint", adjust_setpoint_);  
   this->declare_parameter("adjust_altitude_volume", adjust_altitude_volume_);  
   this->declare_parameter("raw_goal_topic", "/goal_raw");
@@ -64,7 +63,7 @@ PathManager::PathManager()
   this->get_parameter("goal_acceptance_radius", goal_acceptance_radius_);
   this->get_parameter("obstacle_dist_threshold", obstacle_dist_threshold_);
   this->get_parameter("mavros_map_frame", mavros_map_frame_);
-  this->get_parameter("adjust_goal", adjust_goal_);
+  this->get_parameter("adjust_goal", adjust_goal_altitude_);
   this->get_parameter("adjust_setpoint", adjust_setpoint_);  
   this->get_parameter("adjust_altitude_volume", adjust_altitude_volume_);  
   this->get_parameter("raw_goal_topic", raw_goal_topic);
@@ -97,10 +96,6 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
   actual_path_.poses.push_back(last_pos_);
   actual_path_pub_->publish(actual_path_);
 
-  if (path_.size() == 0) {
-    path_received_ = false;
-  }
-
   // Publish next goal when we have reached current one
   if (sub_goals_.size() > 1 && isCloseToGoal()) {
 
@@ -117,8 +112,8 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
       adjustAltitudeVolume(current_goal_.pose.position, altitude);
       current_goal_.pose.position.z = altitude;
     }
-    if (goal_init_ && adjust_goal_) {
-      adjustGoal(current_goal_);
+    if (goal_init_ && adjust_goal_altitude_) {
+      adjustGoalAltitude(current_goal_);
     }
     // Republish goal here regardless of if it needs adjustment
     publishGoal(current_goal_);
@@ -127,7 +122,7 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
 
   // Check if we are close enough to current setpoint to get the next part of the
   // path. Do as a while loop so that we publish the furthest setpoint that is still within the acceptance radius
-  while (path_.size() > 0) {
+  if (path_.size() > 0) {
     publishSetpoint();
     
     if (isCloseToSetpoint()) {
@@ -239,8 +234,8 @@ void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_posi
 void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
   pcl::fromROSMsg(msg, cloud_map_);
 
-  if (goal_init_ && adjust_goal_) {
-    if (adjustGoal(current_goal_)) {
+  if (goal_init_ && adjust_goal_altitude_) {
+    if (adjustGoalAltitude(current_goal_)) {
       publishGoal(current_goal_);
     }
   }
@@ -269,8 +264,8 @@ void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
   }
 
   cloud_map_ = transformCloudToMapFrame(cloud);
-  if (goal_init_ && adjust_goal_)
-    adjustGoal(current_goal_);
+  if (goal_init_ && adjust_goal_altitude_)
+    adjustGoalAltitude(current_goal_);
 } */
 
 void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
@@ -283,8 +278,8 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
   auto direction_vec = subtractPoints(current_goal_.pose.position, last_pos_.pose.position);
   yaw_target_ = atan2(direction_vec.y, direction_vec.x);
 
-  if (adjust_goal_) {
-    adjustGoal(current_goal_);
+  if (adjust_goal_altitude_) {
+    adjustGoalAltitude(current_goal_);
   }
   if (adjust_altitude_volume_) {
     double altitude;
@@ -316,7 +311,7 @@ std::vector<geometry_msgs::msg::PoseStamped> PathManager::segmentGoal(geometry_m
   return sub_goals;
 }
 
-bool PathManager::adjustGoal(geometry_msgs::msg::PoseStamped goal) {
+bool PathManager::adjustGoalAltitude(geometry_msgs::msg::PoseStamped goal) {
 
   float closest_point_distance;
   pcl::PointXYZ closest_point;
@@ -423,7 +418,6 @@ void PathManager::setCurrentPath(const nav_msgs::msg::Path &path) {
     RCLCPP_WARN(this->get_logger(), "Received empty path");
     return;
   }
-  path_received_ = true;
 
   for (unsigned i = 0; i < poses.size(); ++i) {
     path_.push_back(poses[i]);
@@ -465,6 +459,8 @@ void PathManager::publishSetpoint() {
   vec.x = current_setpoint_.pose.position.x - last_pos_.pose.position.x;
   vec.y = current_setpoint_.pose.position.y - last_pos_.pose.position.y;
   vec.z = current_setpoint_.pose.position.z - last_pos_.pose.position.z;
+
+  RCLCPP_INFO(this->get_logger(), "Vec: [%f, %f, %f]", vec.x, vec.y, vec.z);
 
   // Normalize vector
   double mag = sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
