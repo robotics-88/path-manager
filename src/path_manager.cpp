@@ -29,6 +29,7 @@ PathManager::PathManager()
   : Node("path_manager")
   , tf_listener_(nullptr)
   , path_received_(false)
+  , goal_active_(false)
   , goal_init_(false)
   , adjustment_margin_(0.5)
   , setpoint_acceptance_radius_(0.5)
@@ -84,6 +85,8 @@ PathManager::PathManager()
   // Publishers
   mavros_setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/setpoint_position/local", 10);
   actual_path_pub_ = this->create_publisher<nav_msgs::msg::Path>("actual_path", 10);
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_map_(new pcl::PointCloud<pcl::PointXYZ>());
 }
 
 PathManager::~PathManager() {}
@@ -127,6 +130,10 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
     current_setpoint_ = path_[0];
     path_.erase(path_.begin());
     publishSetpoint();
+  }
+
+  if (sub_goals_.size() == 0) {
+    goal_active_ = false;
   }
 }
 
@@ -272,7 +279,22 @@ void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_posi
 }
 
 void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
-  pcl::fromROSMsg(msg, cloud_map_);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>());
+  pcl::fromROSMsg(msg, *cloud);
+  cloud_map_ = cloud;
+
+  if (goal_active_ && path_received_ && path_.size() > 0) {
+    int check_inds = 40; // Same as path planner for now
+    int sz = path_.size();
+    check_inds = std::min(check_inds, sz);
+    for (int ii = 0; ii < check_inds; ii++) {
+      geometry_msgs::msg::PoseStamped pose = path_.at(ii);
+      bool safety = isSafe(cloud_map_, pose.pose.position);
+      if (!safety) {
+        publishGoal(current_goal_);
+      }
+    }
+  }
 
   if (goal_init_ && adjust_goal_) {
     if (adjustGoal(current_goal_)) {
@@ -311,6 +333,7 @@ void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
 void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
 
   RCLCPP_INFO(this->get_logger(), "Received goal");
+  goal_active_ = true;
 
   sub_goals_ = segmentGoal(msg);
   
@@ -424,21 +447,21 @@ bool PathManager::adjustGoal(geometry_msgs::msg::PoseStamped goal) {
   return false;
 }
 
-pcl::PointCloud<pcl::PointXYZ> PathManager::transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in) {
-  pcl::PointCloud<pcl::PointXYZ> cloud_out;
+// pcl::PointCloud<pcl::PointXYZ> PathManager::transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in) {
+//   pcl::PointCloud<pcl::PointXYZ> cloud_out;
 
-  geometry_msgs::msg::TransformStamped pcl_map_tf;
-  try {
-    pcl_map_tf = tf_buffer_->lookupTransform(mavros_map_frame_, cloud_in.header.frame_id, tf2::TimePointZero);
-  }
-  catch (tf2::TransformException &ex) {
-    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Path Manager: %s",ex.what());
-    return cloud_out;
-  }
-  pcl_ros::transformPointCloud(cloud_in, cloud_out, pcl_map_tf);
+//   geometry_msgs::msg::TransformStamped pcl_map_tf;
+//   try {
+//     pcl_map_tf = tf_buffer_->lookupTransform(mavros_map_frame_, cloud_in.header.frame_id, tf2::TimePointZero);
+//   }
+//   catch (tf2::TransformException &ex) {
+//     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Path Manager: %s",ex.what());
+//     return cloud_out;
+//   }
+//   pcl_ros::transformPointCloud(cloud_in, cloud_out, pcl_map_tf);
 
-  return cloud_out;
-}
+//   return cloud_out;
+// }
 
 void PathManager::setCurrentPath(const nav_msgs::msg::Path &path) {
 
@@ -523,11 +546,18 @@ void PathManager::adjustSetpoint() {
   }
 }
 
-void PathManager::findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ> cloud, geometry_msgs::msg::Point point_in, 
+bool PathManager::isSafe(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, const geometry_msgs::msg::Point point_in) {
+  float dist;
+  pcl::PointXYZ ignore_point;
+  findClosestPointInCloud(cloud, point_in, ignore_point, dist);
+  return dist > obstacle_dist_threshold_;
+}
+
+void PathManager::findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, geometry_msgs::msg::Point point_in, 
                                            pcl::PointXYZ &closest_point, float &closest_point_distance) {
 
   closest_point_distance = INFINITY;
-  for (auto &point : cloud) {
+  for (auto &point : *cloud) {
     float dist_x = point_in.x - point.x;
     float dist_y = point_in.y - point.y;
     float dist_z = point_in.z - point.z;
