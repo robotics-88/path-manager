@@ -48,6 +48,7 @@ class PathManager : public rclcpp::Node
         bool adjust_setpoint_;
         bool adjust_altitude_volume_;
         bool do_slam_;
+        bool velocity_setpoint_;
         geometry_msgs::msg::PoseStamped last_pos_;
         pcl::PointCloud<pcl::PointXYZ> cloud_map_;
 
@@ -64,6 +65,7 @@ class PathManager : public rclcpp::Node
         double yaw_target_;
         double target_altitude_;
         double planning_horizon_;
+        double velocity_setpoint_speed_;
 
         float percent_above_;
 

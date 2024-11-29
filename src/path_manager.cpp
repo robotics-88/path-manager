@@ -41,6 +41,8 @@ PathManager::PathManager()
   , do_slam_(true)
   , target_altitude_(3.0)
   , planning_horizon_(6.0)
+  , velocity_setpoint_(false)
+  , velocity_setpoint_speed_(1.0)
 {
 
   // Params
@@ -56,6 +58,8 @@ PathManager::PathManager()
   this->declare_parameter("default_alt", target_altitude_);
   this->declare_parameter("do_slam", do_slam_);
   this->declare_parameter("planning_horizon", planning_horizon_);
+  this->declare_parameter("velocity_setpoint", velocity_setpoint_);
+  this->declare_parameter("velocity_setpoint_speed", velocity_setpoint_speed_);
 
   std::string raw_goal_topic;
   // Params
@@ -72,6 +76,8 @@ PathManager::PathManager()
   this->get_parameter("do_slam", do_slam_);
   this->get_parameter("planning_horizon", planning_horizon_);
   planning_horizon_ -= 1; // Subtract 1 for a safety margin to ensure the segmented goals are fully inside the regional cloud
+  this->get_parameter("velocity_setpoint", velocity_setpoint_);
+  this->get_parameter("velocity_setpoint_speed", velocity_setpoint_speed_);
   
   // Subscribers
   position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/local_position/pose", rclcpp::SensorDataQoS(), std::bind(&PathManager::positionCallback, this, _1));
@@ -452,51 +458,56 @@ void PathManager::publishSetpoint() {
   tf2::convert(setpoint_q, setpoint.pose.orientation);
 
   // Publish setpoint to Mavros
-  // mavros_setpoint_pub_->publish(setpoint);
-
-  // Set velocity vector from difference in current location to point on path.
-  geometry_msgs::msg::Vector3 vec;
-  vec.x = current_setpoint_.pose.position.x - last_pos_.pose.position.x;
-  vec.y = current_setpoint_.pose.position.y - last_pos_.pose.position.y;
-  vec.z = current_setpoint_.pose.position.z - last_pos_.pose.position.z;
-
-  RCLCPP_INFO(this->get_logger(), "Vec: [%f, %f, %f]", vec.x, vec.y, vec.z);
-
-  // Normalize vector
-  double mag = sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
-  if (mag == 0.0) {
-    RCLCPP_INFO(this->get_logger(), "Invalid pose/setpoint, not setting velocity command");
-    return;
+  if (!velocity_setpoint_) {
+    // Use position setpoint
+    mavros_setpoint_pub_->publish(setpoint);
   }
+  else {
+    // Use velocity setpoint. TODO improve trajectory planning - I have experimented with some methods but they have been unreliable so far.
+    // Potential to reincorporate in the future, using acceleration, curvature lookahead, etc. For now just using the simplest method to have something. 
 
-  geometry_msgs::msg::Vector3 unit_vec;
-  unit_vec.x = vec.x / mag;
-  unit_vec.y = vec.y / mag;
-  unit_vec.z = vec.z / mag;
+    // Set velocity vector from difference in current location to point on path.
+    geometry_msgs::msg::Vector3 vec;
+    vec.x = current_setpoint_.pose.position.x - last_pos_.pose.position.x;
+    vec.y = current_setpoint_.pose.position.y - last_pos_.pose.position.y;
+    vec.z = current_setpoint_.pose.position.z - last_pos_.pose.position.z;
+
+    // Normalize vector
+    double mag = sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
+    if (mag == 0.0) {
+      RCLCPP_INFO(this->get_logger(), "Invalid pose/setpoint, not setting velocity command");
+      return;
+    }
+
+    geometry_msgs::msg::Vector3 unit_vec;
+    unit_vec.x = vec.x / mag;
+    unit_vec.y = vec.y / mag;
+    unit_vec.z = vec.z / mag;
 
 
-  // Determine absolute drone speed
-  double speed = 1.0;
+    // Determine absolute drone speed, initially set to velocity setpoint speed param
+    double speed = velocity_setpoint_speed_;
 
-  // Calculate distance to end of path. As we approach path end (within threshold), reduce speed
-  double dist_to_end = distance(last_pos_, path_.back());
-  double threshold = 2.0;
-  if (dist_to_end < threshold) {
-    speed *= dist_to_end / threshold;
+    // Calculate distance to end of path. As we approach path end (within threshold), reduce speed
+    double dist_to_end = distance(last_pos_, path_.back());
+    double threshold = velocity_setpoint_speed_ * 2.0;
+    if (dist_to_end < threshold) {
+      speed *= dist_to_end / threshold;
+    }
+
+    // If at the end of the path, set speed to 0.
+    if (path_.size() == 1) {
+      speed = 0.0;
+    }
+
+    // Apply speed to direction unit vec, and publish as velocity setpoing
+    geometry_msgs::msg::TwistStamped setpoint_vel;
+    setpoint_vel.twist.linear.x = unit_vec.x * speed;
+    setpoint_vel.twist.linear.y = unit_vec.y * speed;
+    setpoint_vel.twist.linear.z = unit_vec.z * speed;
+
+    mavros_velocity_pub_->publish(setpoint_vel);
   }
-
-  // If at the end of the path, set speed to 0.
-  if (path_.size() == 1) {
-    speed = 0.0;
-  }
-
-  // Apply speed to direction unit vec, and publish as velocity setpoing
-  geometry_msgs::msg::TwistStamped setpoint_vel;
-  setpoint_vel.twist.linear.x = unit_vec.x * speed;
-  setpoint_vel.twist.linear.y = unit_vec.y * speed;
-  setpoint_vel.twist.linear.z = unit_vec.z * speed;
-
-  mavros_velocity_pub_->publish(setpoint_vel);
 }
 
 bool PathManager::isCloseToGoal() {
