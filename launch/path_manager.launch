@@ -10,7 +10,7 @@
     <arg name="default_alt" default="3.0"/>
     <arg name="do_slam" default="true"/>
     <arg name="planning_horizon" default="6.0"/>
-    <arg name="velocity_setpoint" default="true"/>
+    <arg name="velocity_setpoint" default="false"/>
     <arg name="velocity_setpoint_speed" default="1.0"/>
 
     <node pkg="path_manager" exec="path_manager_node" output="screen">
