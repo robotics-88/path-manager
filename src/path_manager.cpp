@@ -6,6 +6,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "path_manager/path_manager.h"
 #include "path_manager/common.h"
 #include "task_manager/decco_utilities.h"
+#include "messages_88/srv/request_goal.hpp"
 #include "messages_88/srv/request_path.hpp"
 
 using std::placeholders::_1;
@@ -27,6 +28,11 @@ inline double distance(const geometry_msgs::msg::PoseStamped& a, const geometry_
 PathManager::PathManager()
   : Node("path_manager")
   , tf_listener_(nullptr)
+<<<<<<< HEAD
+=======
+  , path_received_(false)
+  , goal_active_(false)
+>>>>>>> main
   , goal_init_(false)
   , adjustment_margin_(0.5)
   , setpoint_acceptance_radius_(0.5)
@@ -89,6 +95,8 @@ PathManager::PathManager()
   mavros_setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/setpoint_position/local", 10);
   mavros_velocity_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>("/mavros/setpoint_velocity/cmd_vel", 10);
   actual_path_pub_ = this->create_publisher<nav_msgs::msg::Path>("actual_path", 10);
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_map_(new pcl::PointCloud<pcl::PointXYZ>());
 }
 
 PathManager::~PathManager() {}
@@ -113,11 +121,6 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
     auto direction_vec = subtractPoints(current_goal_.pose.position, last_pos_.pose.position);
     yaw_target_ = atan2(direction_vec.y, direction_vec.x);
 
-    if (adjust_altitude_volume_) {
-      double altitude;
-      adjustAltitudeVolume(current_goal_.pose.position, altitude);
-      current_goal_.pose.position.z = altitude;
-    }
     if (goal_init_ && adjust_goal_altitude_) {
       adjustGoalAltitude(current_goal_);
     }
@@ -138,6 +141,10 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
     }
     
   }
+
+  if (sub_goals_.size() == 0) {
+    goal_active_ = false;
+  }
 }
 
 void PathManager::percentAboveCallback(const std_msgs::msg::Float32 &msg) {
@@ -145,25 +152,69 @@ void PathManager::percentAboveCallback(const std_msgs::msg::Float32 &msg) {
 }
 
 void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
-  goal.header.frame_id = mavros_map_frame_; // Path planner doesn't return headers, it seems
+  current_goal_.header.frame_id = mavros_map_frame_; // Path planner doesn't return headers, it seems
   // Determine if open area and path planner is needed
-  RCLCPP_INFO(this->get_logger(), "Path manager publishing goal: [%f, %f, %f]", goal.pose.position.x, goal.pose.position.y, goal.pose.position.z);
   bool open_area = percent_above_ < percent_above_threshold_ && percent_above_ >= 0.0f;
 
   if (open_area || !do_slam_) {
+    if (adjust_altitude_volume_) {
+      double altitude;
+      adjustAltitudeVolume(current_goal_.pose.position, altitude);
+      current_goal_.pose.position.z = altitude;
+    }
     // Publish mavros setpoint directly including yaw target if in an open area or not using slam
     tf2::Quaternion setpoint_q;
     setpoint_q.setRPY(0.0, 0.0, yaw_target_);
-    tf2::convert(setpoint_q, goal.pose.orientation);
-    mavros_setpoint_pub_->publish(goal);
+    tf2::convert(setpoint_q, current_goal_.pose.orientation);
+    RCLCPP_INFO(this->get_logger(), "Path manager publishing MAVROS goal: [%f, %f, %f]", current_goal_.pose.position.x, current_goal_.pose.position.y, current_goal_.pose.position.z);
+    mavros_setpoint_pub_->publish(current_goal_);
   }
   else {
+    if (adjust_altitude_volume_) {
+      current_goal_ = requestGoal(current_goal_);
+      double altitude;
+      adjustAltitudeVolume(current_goal_.pose.position, altitude);
+      current_goal_.pose.position.z = altitude;
+    }
     // Request path with 3 attempts
     for (unsigned i = 0; i < 3; i++) {
-      if (requestPath(goal))
+      RCLCPP_INFO(this->get_logger(), "Path manager publishing PLANNER goal: [%f, %f, %f]", current_goal_.pose.position.x, current_goal_.pose.position.y, current_goal_.pose.position.z);
+      if (requestPath(current_goal_))
         break;
     }
   }
+}
+
+geometry_msgs::msg::PoseStamped PathManager::requestGoal(const geometry_msgs::msg::PoseStamped goal) {
+  std::shared_ptr<rclcpp::Node> get_exploregoal_node = rclcpp::Node::make_shared("get_exploregoal_node");
+  auto get_goal_client = get_exploregoal_node->create_client<messages_88::srv::RequestGoal>("/explorable_goal");
+  auto goal_req = std::make_shared<messages_88::srv::RequestGoal::Request>();
+  goal_req->input_goal = goal.pose;
+
+  auto result = get_goal_client->async_send_request(goal_req);
+  geometry_msgs::msg::Pose output_goal;
+  if (rclcpp::spin_until_future_complete(get_exploregoal_node, result) ==
+      rclcpp::FutureReturnCode::SUCCESS)
+  {
+
+      try
+      {
+          output_goal = result.get()->output_goal;
+          RCLCPP_INFO(this->get_logger(), "Got explore goal");
+      }
+      catch (const std::exception &e)
+      {
+          output_goal = goal.pose;
+          RCLCPP_ERROR(this->get_logger(), "Failed to get explore goal result, using unmodified goal");
+      }
+      
+  } else {
+      output_goal = goal.pose;
+      RCLCPP_ERROR(this->get_logger(), "Failed to get explore goal, using unmodified goal");
+  }
+  geometry_msgs::msg::PoseStamped output = goal;
+  output.pose = output_goal;
+  return output;
 }
 
 bool PathManager::requestPath(const geometry_msgs::msg::PoseStamped goal) {
@@ -238,7 +289,22 @@ void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_posi
 }
 
 void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
-  pcl::fromROSMsg(msg, cloud_map_);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>());
+  pcl::fromROSMsg(msg, *cloud);
+  cloud_map_ = cloud;
+
+  if (goal_active_ && path_received_ && path_.size() > 0) {
+    int check_inds = 40; // Same as path planner for now
+    int sz = path_.size();
+    check_inds = std::min(check_inds, sz);
+    for (int ii = 0; ii < check_inds; ii++) {
+      geometry_msgs::msg::PoseStamped pose = path_.at(ii);
+      bool safety = isSafe(cloud_map_, pose.pose.position);
+      if (!safety) {
+        publishGoal(current_goal_);
+      }
+    }
+  }
 
   if (goal_init_ && adjust_goal_altitude_) {
     if (adjustGoalAltitude(current_goal_)) {
@@ -277,6 +343,7 @@ void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
 void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
 
   RCLCPP_INFO(this->get_logger(), "Received goal");
+  goal_active_ = true;
 
   sub_goals_ = segmentGoal(msg);
   
@@ -286,11 +353,6 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
 
   if (adjust_goal_altitude_) {
     adjustGoalAltitude(current_goal_);
-  }
-  if (adjust_altitude_volume_) {
-    double altitude;
-    adjustAltitudeVolume(current_goal_.pose.position, altitude);
-    current_goal_.pose.position.z = altitude;
   }
 
   publishGoal(current_goal_);
@@ -395,21 +457,21 @@ bool PathManager::adjustGoalAltitude(geometry_msgs::msg::PoseStamped goal) {
   return false;
 }
 
-pcl::PointCloud<pcl::PointXYZ> PathManager::transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in) {
-  pcl::PointCloud<pcl::PointXYZ> cloud_out;
+// pcl::PointCloud<pcl::PointXYZ> PathManager::transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in) {
+//   pcl::PointCloud<pcl::PointXYZ> cloud_out;
 
-  geometry_msgs::msg::TransformStamped pcl_map_tf;
-  try {
-    pcl_map_tf = tf_buffer_->lookupTransform(mavros_map_frame_, cloud_in.header.frame_id, tf2::TimePointZero);
-  }
-  catch (tf2::TransformException &ex) {
-    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Path Manager: %s",ex.what());
-    return cloud_out;
-  }
-  pcl_ros::transformPointCloud(cloud_in, cloud_out, pcl_map_tf);
+//   geometry_msgs::msg::TransformStamped pcl_map_tf;
+//   try {
+//     pcl_map_tf = tf_buffer_->lookupTransform(mavros_map_frame_, cloud_in.header.frame_id, tf2::TimePointZero);
+//   }
+//   catch (tf2::TransformException &ex) {
+//     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Path Manager: %s",ex.what());
+//     return cloud_out;
+//   }
+//   pcl_ros::transformPointCloud(cloud_in, cloud_out, pcl_map_tf);
 
-  return cloud_out;
-}
+//   return cloud_out;
+// }
 
 void PathManager::setCurrentPath(const nav_msgs::msg::Path &path) {
 
@@ -542,11 +604,18 @@ void PathManager::adjustSetpoint() {
   }
 }
 
-void PathManager::findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ> cloud, geometry_msgs::msg::Point point_in, 
+bool PathManager::isSafe(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, const geometry_msgs::msg::Point point_in) {
+  float dist;
+  pcl::PointXYZ ignore_point;
+  findClosestPointInCloud(cloud, point_in, ignore_point, dist);
+  return dist > obstacle_dist_threshold_;
+}
+
+void PathManager::findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, geometry_msgs::msg::Point point_in, 
                                            pcl::PointXYZ &closest_point, float &closest_point_distance) {
 
   closest_point_distance = INFINITY;
-  for (auto &point : cloud) {
+  for (auto &point : *cloud) {
     float dist_x = point_in.x - point.x;
     float dist_y = point_in.y - point.y;
     float dist_z = point_in.z - point.z;
