@@ -28,11 +28,8 @@ inline double distance(const geometry_msgs::msg::PoseStamped& a, const geometry_
 PathManager::PathManager()
   : Node("path_manager")
   , tf_listener_(nullptr)
-<<<<<<< HEAD
-=======
   , path_received_(false)
   , goal_active_(false)
->>>>>>> main
   , goal_init_(false)
   , adjustment_margin_(0.5)
   , setpoint_acceptance_radius_(0.5)
@@ -110,6 +107,10 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
   actual_path_.poses.push_back(last_pos_);
   actual_path_pub_->publish(actual_path_);
 
+  if (path_.size() == 0) {
+    path_received_ = false;
+  }
+
   // Publish next goal when we have reached current one
   if (sub_goals_.size() > 1 && isCloseToGoal()) {
 
@@ -128,18 +129,28 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
     publishGoal(current_goal_);
   }
 
-
-  // Check if we are close enough to current setpoint to get the next part of the
-  // path. Do as a while loop so that we publish the furthest setpoint that is still within the acceptance radius
-  if (path_.size() > 0) {
-    publishSetpoint();
-    
-    if (isCloseToSetpoint()) {
-      last_setpoint_ = current_setpoint_;    
+  if (!velocity_setpoint_) {
+    // Check if we are close enough to current setpoint to get the next part of the
+    // path. Do as a while loop so that we publish the furthest setpoint that is still within the acceptance radius
+    while (path_.size() > 0 && isCloseToSetpoint()) {
+      last_setpoint_ = current_setpoint_;
       current_setpoint_ = path_[0];
       path_.erase(path_.begin());
+      publishSetpoint();
     }
-    
+  }
+  else {
+    // Handle velocity setpoints different than position setpoints, just send next velocity when we are close to that setpoint.
+    if (path_.size() > 0) {
+      publishSetpoint();
+      
+      if (isCloseToSetpoint()) {
+        last_setpoint_ = current_setpoint_;    
+        current_setpoint_ = path_[0];
+        path_.erase(path_.begin());
+      }
+      
+    }
   }
 
   if (sub_goals_.size() == 0) {
@@ -486,6 +497,8 @@ void PathManager::setCurrentPath(const nav_msgs::msg::Path &path) {
     RCLCPP_WARN(this->get_logger(), "Received empty path");
     return;
   }
+
+  path_received_ = true;
 
   for (unsigned i = 0; i < poses.size(); ++i) {
     path_.push_back(poses[i]);
