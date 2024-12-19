@@ -56,7 +56,6 @@ class PathManager : public rclcpp::Node
         nav_msgs::msg::Path actual_path_;
         geometry_msgs::msg::PoseStamped next_setpoint_;
         geometry_msgs::msg::PoseStamped current_setpoint_;
-        geometry_msgs::msg::PoseStamped last_setpoint_;
         std::vector<geometry_msgs::msg::PoseStamped> path_;
         std::vector<geometry_msgs::msg::PoseStamped> sub_goals_;
 

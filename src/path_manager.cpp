@@ -133,14 +133,18 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
   // Check if we are close enough to current setpoint to get the next part of the
   // path. Do as a while loop so that we publish the furthest setpoint that is still within the acceptance radius
   while (path_.size() > 0 && isCloseToSetpoint()) {
-    last_setpoint_ = current_setpoint_;
+
+    // Get furthest ahead setpoint and set as current setpoint
     current_setpoint_ = path_[0];
     if (path_.size() > 1)
       next_setpoint_ = path_[1];
     else
       next_setpoint_ = current_setpoint_;
     path_.erase(path_.begin());
-    publishSetpoint();
+
+    // Only publish the furthest along one that is outside of setpoint threshold. 
+    if (!isCloseToSetpoint())
+      publishSetpoint();
   }
 
   if (sub_goals_.size() == 0) {
@@ -495,7 +499,6 @@ void PathManager::setCurrentPath(const nav_msgs::msg::Path &path) {
     path_.push_back(poses[i]);
   }
 
-  last_setpoint_ = path_[0];
   current_setpoint_ = path_[1];
   if (path_.size() > 2) {
     next_setpoint_ = path_[2];
