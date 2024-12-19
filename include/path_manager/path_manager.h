@@ -10,6 +10,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 #include "geometry_msgs/msg/polygon_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
+#include "mavros_msgs/msg/position_target.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 #include "std_msgs/msg/float32.hpp"
@@ -44,7 +46,7 @@ class PathManager : public rclcpp::Node
         double obstacle_dist_threshold_;
         float percent_above_threshold_;
         bool path_received_;
-        bool adjust_goal_;
+        bool adjust_goal_altitude_;
         bool adjust_setpoint_;
         bool adjust_altitude_volume_;
         bool do_slam_;
@@ -52,8 +54,8 @@ class PathManager : public rclcpp::Node
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_map_;
 
         nav_msgs::msg::Path actual_path_;
+        geometry_msgs::msg::PoseStamped next_setpoint_;
         geometry_msgs::msg::PoseStamped current_setpoint_;
-        geometry_msgs::msg::PoseStamped last_setpoint_;
         std::vector<geometry_msgs::msg::PoseStamped> path_;
         std::vector<geometry_msgs::msg::PoseStamped> sub_goals_;
 
@@ -65,6 +67,7 @@ class PathManager : public rclcpp::Node
         double yaw_target_;
         double target_altitude_;
         double planning_horizon_;
+        double velocity_setpoint_speed_;
 
         float percent_above_;
 
@@ -75,8 +78,11 @@ class PathManager : public rclcpp::Node
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr   pointcloud_sub_;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
 
-        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr mavros_setpoint_pub_;
-        rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr             actual_path_pub_;
+        
+        rclcpp::Publisher<mavros_msgs::msg::PositionTarget>::SharedPtr   mavros_setpoint_raw_pub_;
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr    mavros_setpoint_pub_;
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr    setpoint_viz_pub_;
+        rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr                actual_path_pub_;
 
         void percentAboveCallback(const std_msgs::msg::Float32 &msg);
         void positionCallback(const geometry_msgs::msg::PoseStamped &msg);
@@ -95,7 +101,7 @@ class PathManager : public rclcpp::Node
         std::vector<geometry_msgs::msg::PoseStamped> segmentGoal(geometry_msgs::msg::PoseStamped goal);
 
         bool isCloseToGoal();
-        bool adjustGoal(geometry_msgs::msg::PoseStamped goal);
+        bool adjustGoalAltitude(geometry_msgs::msg::PoseStamped goal);
         void publishGoal(geometry_msgs::msg::PoseStamped goal);
         geometry_msgs::msg::PoseStamped requestGoal(const geometry_msgs::msg::PoseStamped goal);
         bool requestPath(const geometry_msgs::msg::PoseStamped goal);
