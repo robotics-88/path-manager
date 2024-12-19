@@ -46,7 +46,7 @@ PathManager::PathManager()
   , do_slam_(true)
   , target_altitude_(3.0)
   , planning_horizon_(6.0)
-  , velocity_setpoint_speed_(1.0)
+  , velocity_setpoint_speed_(0.5)
 {
 
   // Params
