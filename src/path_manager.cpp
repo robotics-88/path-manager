@@ -129,7 +129,6 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
     publishGoal(current_goal_);
   }
 
-
   // Check if we are close enough to current setpoint to get the next part of the
   // path. Do as a while loop so that we publish the furthest setpoint that is still within the acceptance radius
   while (path_.size() > 0 && isCloseToSetpoint()) {
@@ -149,6 +148,11 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
 
   if (sub_goals_.size() == 0) {
     goal_active_ = false;
+  }
+
+  // If last published setpoint is older than 1 second, republish it. This is to get the drone "un-stuck" if it goes off path
+  if (!isCloseToGoal() && last_published_setpoint_time_.seconds() > 0 && this->get_clock()->now() - last_published_setpoint_time_ > 1s) {
+    publishSetpoint();
   }
 }
 
@@ -577,6 +581,8 @@ void PathManager::publishSetpoint() {
 
   mavros_setpoint_raw_pub_->publish(msg);
 
+  // Update last published setpoint time
+  last_published_setpoint_time_ = this->get_clock()->now();
 
   // Publish setpoint vizualizer (does not include velocity, potential TODO)
   geometry_msgs::msg::PoseStamped viz_msg;

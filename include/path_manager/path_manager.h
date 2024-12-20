@@ -59,6 +59,8 @@ class PathManager : public rclcpp::Node
         std::vector<geometry_msgs::msg::PoseStamped> path_;
         std::vector<geometry_msgs::msg::PoseStamped> sub_goals_;
 
+        rclcpp::Time last_published_setpoint_time_;
+
         geometry_msgs::msg::PoseStamped current_goal_;
         bool goal_active_;
         bool goal_init_;
