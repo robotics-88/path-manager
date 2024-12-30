@@ -86,6 +86,9 @@ class PathManager : public rclcpp::Node
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr    setpoint_viz_pub_;
         rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr                actual_path_pub_;
 
+        void updateGoal();
+        void updateSetpoint();
+
         void percentAboveCallback(const std_msgs::msg::Float32 &msg);
         void positionCallback(const geometry_msgs::msg::PoseStamped &msg);
         void pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg);
@@ -94,7 +97,7 @@ class PathManager : public rclcpp::Node
 
         // pcl::PointCloud<pcl::PointXYZ> transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in);
         void setCurrentPath(const nav_msgs::msg::Path &path);
-        void publishSetpoint();
+        void publishSetpoint(bool use_velocity);
         bool isCloseToSetpoint();
         void adjustSetpoint();
         void findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, geometry_msgs::msg::Point point_in, 
@@ -103,6 +106,7 @@ class PathManager : public rclcpp::Node
         std::vector<geometry_msgs::msg::PoseStamped> segmentGoal(geometry_msgs::msg::PoseStamped goal);
 
         bool isCloseToGoal();
+        bool isCloserThanSetpoint();
         bool adjustGoalAltitude(geometry_msgs::msg::PoseStamped goal);
         void publishGoal(geometry_msgs::msg::PoseStamped goal);
         geometry_msgs::msg::PoseStamped requestGoal(const geometry_msgs::msg::PoseStamped goal);
