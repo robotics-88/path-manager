@@ -45,7 +45,6 @@ class PathManager : public rclcpp::Node
         double goal_acceptance_radius_;
         double obstacle_dist_threshold_;
         float percent_above_threshold_;
-        bool path_received_;
         bool adjust_goal_altitude_;
         bool adjust_setpoint_;
         bool adjust_altitude_volume_;

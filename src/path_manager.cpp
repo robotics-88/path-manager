@@ -30,7 +30,6 @@ inline double distance(const geometry_msgs::msg::PoseStamped& a, const geometry_
 PathManager::PathManager()
   : Node("path_manager")
   , tf_listener_(nullptr)
-  , path_received_(false)
   , goal_active_(false)
   , goal_init_(false)
   , adjustment_margin_(0.5)
@@ -107,33 +106,19 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
   actual_path_.poses.push_back(last_pos_);
   actual_path_pub_->publish(actual_path_);
 
-  if (path_.size() == 0) {
-    path_received_ = false;
-  }
-
   updateGoal();
 
-  if (goal_active_) {
-    updateSetpoint();
-
-    // If last published setpoint is older than 1 second, republish it. This is to get the drone "un-stuck" if it goes off path
-    if (last_published_setpoint_time_.seconds() > 0 && this->get_clock()->now() - last_published_setpoint_time_ > 1s) {
-      RCLCPP_INFO(this->get_logger(), "Path manager republishing last setpoint");
-      publishSetpoint(false);
-    }
-  }
+  updateSetpoint();
 }
 
 void PathManager::updateGoal() {
   // Publish next goal when we have reached current one
   if (sub_goals_.size() > 0) {
-    goal_active_ = true;
     if (isCloseToGoal()) {
 
       // Remove sub goal from list, and set new current goal.
       sub_goals_.erase(sub_goals_.begin());
       if (sub_goals_.size() == 0) {
-        goal_active_ = false;
         return;
       }
 
@@ -146,15 +131,14 @@ void PathManager::updateGoal() {
       publishGoal(current_goal_);
     }
   }
-  else {
-    goal_active_ = false;
-  }
 }
 
 void PathManager::updateSetpoint() {
   // Check if we are close enough to current setpoint to get the next part of the
   // path. Do as a while loop so that we publish the furthest setpoint that is still within the acceptance radius
   if (path_.size() > 0) {
+    
+    goal_active_ = true;
 
     while (isCloseToSetpoint()) { // || isCloserThanSetpoint()) {
       // Get furthest ahead setpoint and set as current setpoint
@@ -174,6 +158,15 @@ void PathManager::updateSetpoint() {
         publishSetpoint(true);
       }
     }
+
+    // If last published setpoint is older than 1 second, republish it. This is to get the drone "un-stuck" if it goes off path
+    if (last_published_setpoint_time_.seconds() > 0 && this->get_clock()->now() - last_published_setpoint_time_ > 1s) {
+      RCLCPP_INFO(this->get_logger(), "Path manager republishing last setpoint");
+      publishSetpoint(false);
+    }
+  }
+  else {
+    goal_active_ = false;
   }
 }
 
@@ -201,6 +194,7 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
     current_goal_ = sub_goals_.at(0);
     auto direction_vec = subtractPoints(current_goal_.pose.position, last_pos_.pose.position);
     double yaw_target = atan2(direction_vec.y, direction_vec.x);
+    setpoint_q.setRPY(0.0, 0.0, yaw_target);
     tf2::convert(setpoint_q, current_goal_.pose.orientation);
     RCLCPP_INFO(this->get_logger(), "Path manager publishing MAVROS goal: [%f, %f, %f]", current_goal_.pose.position.x, current_goal_.pose.position.y, current_goal_.pose.position.z);
     mavros_setpoint_pub_->publish(current_goal_);
@@ -331,7 +325,7 @@ void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
   cloud_map_ = cloud;
 
   // TODO: this should probably go in positioncallback for cleanliness
-  if (goal_active_ && path_received_ && path_.size() > 0) {
+  if (goal_active_) {
     int check_inds = 40; // Same as path planner for now
     int sz = path_.size();
     check_inds = std::min(check_inds, sz);
@@ -520,8 +514,6 @@ void PathManager::setCurrentPath(const nav_msgs::msg::Path &path) {
     return;
   }
 
-  path_received_ = true;
-
   for (unsigned i = 0; i < poses.size(); ++i) {
     path_.push_back(poses[i]);
   }
@@ -549,30 +541,25 @@ void PathManager::publishSetpoint(bool use_velocity) {
   msg.header.stamp = this->get_clock()->now();
   msg.position = current_setpoint_.pose.position;
 
-  // Create velocity setpoint / yaw target
-  // Set velocity vector pointing to next setpoint.
+  // Create vector pointing from current setpoint to following setpoint for yaw target and velocity target, if needed
   auto vec = subtractPoints(next_setpoint_.pose.position, current_setpoint_.pose.position);
-
-  // Normalize vector and set yaw after checking for 0 on vector length
-  geometry_msgs::msg::Vector3 unit_vec;
-  double mag = sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
-  if (mag != 0.0) {
-    unit_vec.x = vec.x / mag;
-    unit_vec.y = vec.y / mag;
-    unit_vec.z = vec.z / mag;
-
-    // Only update yaw target if value is relevant
-    yaw_target_ = atan2(unit_vec.y, unit_vec.x);
-  }
-  else {
-    unit_vec.x = 0.0;
-    unit_vec.y = 0.0;
-    unit_vec.z = 0.0;
-  }
-
-  msg.yaw = yaw_target_;
+  msg.yaw = atan2(vec.y, vec.x);
 
   if (use_velocity) {
+
+    // Normalize vector and set yaw after checking for 0 on vector length
+    geometry_msgs::msg::Vector3 unit_vec;
+    double mag = sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
+    if (mag != 0.0) {
+      unit_vec.x = vec.x / mag;
+      unit_vec.y = vec.y / mag;
+      unit_vec.z = vec.z / mag;
+    }
+    else {
+      unit_vec.x = 0.0;
+      unit_vec.y = 0.0;
+      unit_vec.z = 0.0;
+    }
   
     // Determine absolute drone speed, initially set to velocity setpoint speed param
     double speed = velocity_setpoint_speed_;
@@ -587,7 +574,7 @@ void PathManager::publishSetpoint(bool use_velocity) {
     }
 
     // If at the end of the path, set speed to 0.
-    if (path_.size() == 1) {
+    if (path_.size() == 0) {
       speed = 0.0;
     }
 
