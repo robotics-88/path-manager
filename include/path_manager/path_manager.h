@@ -49,7 +49,7 @@ class PathManager : public rclcpp::Node
         bool adjust_setpoint_;
         bool adjust_altitude_volume_;
         bool do_slam_;
-        geometry_msgs::msg::PoseStamped last_pos_;
+        geometry_msgs::msg::PoseStamped current_pos_;
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_map_;
 
         nav_msgs::msg::Path actual_path_;

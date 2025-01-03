@@ -100,10 +100,10 @@ PathManager::~PathManager() {}
 // Sets the current position and checks if the current setpoint has been reached
 void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
   // Update position
-  last_pos_ = msg;
+  current_pos_ = msg;
 
-  last_pos_.header.frame_id = mavros_map_frame_;
-  actual_path_.poses.push_back(last_pos_);
+  current_pos_.header.frame_id = mavros_map_frame_;
+  actual_path_.poses.push_back(current_pos_);
   actual_path_pub_->publish(actual_path_);
 
   updateGoal();
@@ -124,6 +124,8 @@ void PathManager::updateGoal() {
 
       current_goal_ = sub_goals_.at(0);
 
+      yaw_target_ = atan2(current_goal_.pose.position.y - current_pos_.pose.position.y, current_goal_.pose.position.x - current_pos_.pose.position.x);
+
       if (goal_init_ && adjust_goal_altitude_) {
         adjustGoalAltitude(current_goal_);
       }
@@ -140,7 +142,7 @@ void PathManager::updateSetpoint() {
     
     goal_active_ = true;
 
-    while (isCloseToSetpoint()) { // || isCloserThanSetpoint()) {
+    while (isCloseToSetpoint() || isCloserThanSetpoint()) {
       // Get furthest ahead setpoint and set as current setpoint
       path_.erase(path_.begin());
       if (path_.size() == 0) {
@@ -154,7 +156,7 @@ void PathManager::updateSetpoint() {
         next_setpoint_ = current_setpoint_;
 
       // Check again, and if outside the range, then publish setpoint outside range. 
-      if (!isCloseToSetpoint()) {
+      if (!isCloseToSetpoint() && !isCloserThanSetpoint()) {
         publishSetpoint(true);
       }
     }
@@ -171,7 +173,7 @@ void PathManager::updateSetpoint() {
 }
 
 bool PathManager::isCloserThanSetpoint() {
-  return distance(path_.back(), last_pos_) < distance(path_.back(), current_setpoint_);
+  return distance(path_.back(), current_pos_) < distance(path_.back(), current_setpoint_);
 }
 
 void PathManager::percentAboveCallback(const std_msgs::msg::Float32 &msg) {
@@ -192,7 +194,7 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
     // Publish mavros setpoint directly including yaw target if in an open area or not using slam
     tf2::Quaternion setpoint_q;
     current_goal_ = sub_goals_.at(0);
-    auto direction_vec = subtractPoints(current_goal_.pose.position, last_pos_.pose.position);
+    auto direction_vec = subtractPoints(current_goal_.pose.position, current_pos_.pose.position);
     double yaw_target = atan2(direction_vec.y, direction_vec.x);
     setpoint_q.setRPY(0.0, 0.0, yaw_target);
     tf2::convert(setpoint_q, current_goal_.pose.orientation);
@@ -387,7 +389,7 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
 
 std::vector<geometry_msgs::msg::PoseStamped> PathManager::segmentGoal(geometry_msgs::msg::PoseStamped goal) {
 
-  double distance = decco_utilities::distance_xy(last_pos_.pose.position, goal.pose.position);
+  double distance = decco_utilities::distance_xy(current_pos_.pose.position, goal.pose.position);
 
   int num_segments = std::ceil(distance / planning_horizon_);
 
@@ -397,9 +399,9 @@ std::vector<geometry_msgs::msg::PoseStamped> PathManager::segmentGoal(geometry_m
   for (int i = 1; i <= num_segments; ++i) {
     geometry_msgs::msg::PoseStamped Pi;
     double t = static_cast<double>(i) / static_cast<double>(num_segments);
-    Pi.pose.position.x = last_pos_.pose.position.x + t * (goal.pose.position.x - last_pos_.pose.position.x);
-    Pi.pose.position.y = last_pos_.pose.position.y + t * (goal.pose.position.y - last_pos_.pose.position.y);
-    Pi.pose.position.z = last_pos_.pose.position.z + t * (goal.pose.position.z - last_pos_.pose.position.z);
+    Pi.pose.position.x = current_pos_.pose.position.x + t * (goal.pose.position.x - current_pos_.pose.position.x);
+    Pi.pose.position.y = current_pos_.pose.position.y + t * (goal.pose.position.y - current_pos_.pose.position.y);
+    Pi.pose.position.z = current_pos_.pose.position.z + t * (goal.pose.position.z - current_pos_.pose.position.z);
 
     sub_goals.push_back(Pi);
   }
@@ -541,11 +543,12 @@ void PathManager::publishSetpoint(bool use_velocity) {
   msg.header.stamp = this->get_clock()->now();
   msg.position = current_setpoint_.pose.position;
 
-  // Create vector pointing from current setpoint to following setpoint for yaw target and velocity target, if needed
-  auto vec = subtractPoints(next_setpoint_.pose.position, current_setpoint_.pose.position);
-  msg.yaw = atan2(vec.y, vec.x);
+  msg.yaw = yaw_target_;
 
   if (use_velocity) {
+
+    // Create vector pointing from current setpoint to following setpoint for velocity target, if needed
+    auto vec = subtractPoints(next_setpoint_.pose.position, current_setpoint_.pose.position);
 
     // Normalize vector and set yaw after checking for 0 on vector length
     geometry_msgs::msg::Vector3 unit_vec;
@@ -605,11 +608,11 @@ void PathManager::publishSetpoint(bool use_velocity) {
 }
 
 bool PathManager::isCloseToGoal() {
-  return distance(last_pos_, current_goal_) < goal_acceptance_radius_;
+  return distance(current_pos_, current_goal_) < goal_acceptance_radius_;
 }
 
 bool PathManager::isCloseToSetpoint() {
-  return distance(last_pos_, current_setpoint_) < setpoint_acceptance_radius_;
+  return distance(current_pos_, current_setpoint_) < setpoint_acceptance_radius_;
 }
 
 void PathManager::adjustSetpoint() {
