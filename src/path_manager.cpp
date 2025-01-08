@@ -124,8 +124,6 @@ void PathManager::updateGoal() {
 
       current_goal_ = sub_goals_.at(0);
 
-      yaw_target_ = atan2(current_goal_.pose.position.y - current_pos_.pose.position.y, current_goal_.pose.position.x - current_pos_.pose.position.x);
-
       if (goal_init_ && adjust_goal_altitude_) {
         adjustGoalAltitude(current_goal_);
       }
@@ -543,17 +541,27 @@ void PathManager::publishSetpoint(bool use_velocity) {
   msg.header.stamp = this->get_clock()->now();
   msg.position = current_setpoint_.pose.position;
 
+  int viable_pts_ahead = 5;
+  if (path_.size() < viable_pts_ahead) {
+    viable_pts_ahead = path_.size();
+  }
+  // Create vector pointing from current setpoint to point ahead on path, using 5 points ahead as rough estimation
+  // TODO play with this number
+  auto vec = subtractPoints(path_[viable_pts_ahead].pose.position, current_setpoint_.pose.position);
+
+  // Only set yaw target if vector is non-zero
+  if (fabs(vec.x) > FLT_EPSILON || fabs(vec.y) > FLT_EPSILON) {
+    yaw_target_ = atan2(vec.y, vec.x);
+  }
+
   msg.yaw = yaw_target_;
 
   if (use_velocity) {
 
-    // Create vector pointing from current setpoint to following setpoint for velocity target, if needed
-    auto vec = subtractPoints(next_setpoint_.pose.position, current_setpoint_.pose.position);
-
     // Normalize vector and set yaw after checking for 0 on vector length
     geometry_msgs::msg::Vector3 unit_vec;
     double mag = sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
-    if (mag != 0.0) {
+    if (mag > FLT_EPSILON) {
       unit_vec.x = vec.x / mag;
       unit_vec.y = vec.y / mag;
       unit_vec.z = vec.z / mag;
