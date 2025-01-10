@@ -45,12 +45,11 @@ class PathManager : public rclcpp::Node
         double goal_acceptance_radius_;
         double obstacle_dist_threshold_;
         float percent_above_threshold_;
-        bool path_received_;
         bool adjust_goal_altitude_;
         bool adjust_setpoint_;
         bool adjust_altitude_volume_;
         bool do_slam_;
-        geometry_msgs::msg::PoseStamped last_pos_;
+        geometry_msgs::msg::PoseStamped current_pos_;
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_map_;
 
         nav_msgs::msg::Path actual_path_;
@@ -58,6 +57,8 @@ class PathManager : public rclcpp::Node
         geometry_msgs::msg::PoseStamped current_setpoint_;
         std::vector<geometry_msgs::msg::PoseStamped> path_;
         std::vector<geometry_msgs::msg::PoseStamped> sub_goals_;
+
+        rclcpp::Time last_published_setpoint_time_;
 
         geometry_msgs::msg::PoseStamped current_goal_;
         bool goal_active_;
@@ -84,6 +85,9 @@ class PathManager : public rclcpp::Node
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr    setpoint_viz_pub_;
         rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr                actual_path_pub_;
 
+        void updateGoal();
+        void updateSetpoint();
+
         void percentAboveCallback(const std_msgs::msg::Float32 &msg);
         void positionCallback(const geometry_msgs::msg::PoseStamped &msg);
         void pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg);
@@ -92,7 +96,7 @@ class PathManager : public rclcpp::Node
 
         // pcl::PointCloud<pcl::PointXYZ> transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in);
         void setCurrentPath(const nav_msgs::msg::Path &path);
-        void publishSetpoint();
+        void publishSetpoint(bool use_velocity);
         bool isCloseToSetpoint();
         void adjustSetpoint();
         void findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, geometry_msgs::msg::Point point_in, 
@@ -101,6 +105,7 @@ class PathManager : public rclcpp::Node
         std::vector<geometry_msgs::msg::PoseStamped> segmentGoal(geometry_msgs::msg::PoseStamped goal);
 
         bool isCloseToGoal();
+        bool isCloserThanSetpoint();
         bool adjustGoalAltitude(geometry_msgs::msg::PoseStamped goal);
         void publishGoal(geometry_msgs::msg::PoseStamped goal);
         geometry_msgs::msg::PoseStamped requestGoal(const geometry_msgs::msg::PoseStamped goal);
