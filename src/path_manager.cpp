@@ -186,7 +186,6 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
     }
 
     // Get goal data
-    current_goal_ = sub_goals_.at(0);
     auto direction_vec = subtractPoints(current_goal_.pose.position, current_pos_.pose.position);
     double yaw_target = atan2(direction_vec.y, direction_vec.x);
 
