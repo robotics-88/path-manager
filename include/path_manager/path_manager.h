@@ -53,7 +53,6 @@ class PathManager : public rclcpp::Node
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_map_;
 
         nav_msgs::msg::Path actual_path_;
-        geometry_msgs::msg::PoseStamped next_setpoint_;
         geometry_msgs::msg::PoseStamped current_setpoint_;
         std::vector<geometry_msgs::msg::PoseStamped> path_;
         std::vector<geometry_msgs::msg::PoseStamped> sub_goals_;
@@ -78,10 +77,8 @@ class PathManager : public rclcpp::Node
         rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr          percent_above_sub_;
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr   pointcloud_sub_;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
-
         
         rclcpp::Publisher<mavros_msgs::msg::PositionTarget>::SharedPtr   mavros_setpoint_raw_pub_;
-        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr    mavros_setpoint_pub_;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr    setpoint_viz_pub_;
         rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr                actual_path_pub_;
 

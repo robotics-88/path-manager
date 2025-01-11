@@ -82,13 +82,12 @@ PathManager::PathManager()
   
   // Subscribers
   position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/local_position/pose", rclcpp::SensorDataQoS(), std::bind(&PathManager::positionCallback, this, _1));
-  percent_above_sub_ = this->create_subscription<std_msgs::msg::Float32>("/pcl_analysis/percent_above", 1, std::bind(&PathManager::percentAboveCallback, this, _1));
-  pointcloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 1, std::bind(&PathManager::pointCloudCallback, this, _1));
-  raw_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(raw_goal_topic, 1, std::bind(&PathManager::rawGoalCallback, this, _1));
+  percent_above_sub_ = this->create_subscription<std_msgs::msg::Float32>("/pcl_analysis/percent_above", 10, std::bind(&PathManager::percentAboveCallback, this, _1));
+  pointcloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 10, std::bind(&PathManager::pointCloudCallback, this, _1));
+  raw_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(raw_goal_topic, 10, std::bind(&PathManager::rawGoalCallback, this, _1));
 
   // Publishers
-  mavros_setpoint_raw_pub_ = this->create_publisher<mavros_msgs::msg::PositionTarget>("/mavros/setpoint_raw/local", 10);
-  mavros_setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/setpoint_position/local", 10);
+  mavros_setpoint_raw_pub_ = this->create_publisher<mavros_msgs::msg::PositionTarget>("/mavros/setpoint_raw/local", rclcpp::SensorDataQoS());
   setpoint_viz_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("setpoint_viz", 10);
   actual_path_pub_ = this->create_publisher<nav_msgs::msg::Path>("actual_path", 10);
 
@@ -148,10 +147,6 @@ void PathManager::updateSetpoint() {
       }
 
       current_setpoint_ = path_[0];
-      if (path_.size() > 1)
-        next_setpoint_ = path_[1];
-      else
-        next_setpoint_ = current_setpoint_;
 
       // Check again, and if outside the range, then publish setpoint outside range. 
       if (!isCloseToSetpoint() && !isCloserThanSetpoint()) {
@@ -189,15 +184,35 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
       adjustAltitudeVolume(current_goal_.pose.position, altitude);
       current_goal_.pose.position.z = altitude;
     }
-    // Publish mavros setpoint directly including yaw target if in an open area or not using slam
-    tf2::Quaternion setpoint_q;
+
+    // Get goal data
     current_goal_ = sub_goals_.at(0);
     auto direction_vec = subtractPoints(current_goal_.pose.position, current_pos_.pose.position);
     double yaw_target = atan2(direction_vec.y, direction_vec.x);
-    setpoint_q.setRPY(0.0, 0.0, yaw_target);
-    tf2::convert(setpoint_q, current_goal_.pose.orientation);
+
+    // Publish goal
+    mavros_msgs::msg::PositionTarget setpoint;
+    setpoint.header.frame_id = mavros_map_frame_;
+    setpoint.header.stamp = this->get_clock()->now();
+    setpoint.position = current_goal_.pose.position;
+    setpoint.yaw = yaw_target;
+    setpoint.coordinate_frame = setpoint.FRAME_LOCAL_NED;
+    setpoint.type_mask |= setpoint.IGNORE_AFX | setpoint.IGNORE_AFY | setpoint.IGNORE_AFZ | 
+                          setpoint.IGNORE_VX | setpoint.IGNORE_VY | setpoint.IGNORE_VZ | setpoint.IGNORE_YAW_RATE;
+
     RCLCPP_INFO(this->get_logger(), "Path manager publishing MAVROS goal: [%f, %f, %f]", current_goal_.pose.position.x, current_goal_.pose.position.y, current_goal_.pose.position.z);
-    mavros_setpoint_pub_->publish(current_goal_);
+    mavros_setpoint_raw_pub_->publish(setpoint);
+
+    // Publish setpoint vizualizer (does not include velocity, potential TODO)
+    geometry_msgs::msg::PoseStamped viz_msg;
+    viz_msg.header.stamp = this->get_clock()->now();
+    viz_msg.header.frame_id = mavros_map_frame_;
+    viz_msg.pose.position = setpoint.position;
+    tf2::Quaternion setpoint_q;
+    setpoint_q.setRPY(0.0, 0.0, setpoint.yaw);
+    tf2::convert(setpoint_q, viz_msg.pose.orientation);
+
+    setpoint_viz_pub_->publish(viz_msg);
   }
   else {
     current_goal_ = requestGoal(current_goal_);
@@ -519,12 +534,6 @@ void PathManager::setCurrentPath(const nav_msgs::msg::Path &path) {
   }
 
   current_setpoint_ = path_[0];
-  if (path_.size() > 1) {
-    next_setpoint_ = path_[1];
-  }
-  else {
-    next_setpoint_ = current_setpoint_;
-  }
 
   // Publish first setpoint
   publishSetpoint(true);
