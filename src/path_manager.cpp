@@ -388,9 +388,10 @@ void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
 
 void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
 
-  RCLCPP_INFO(this->get_logger(), "Received goal");
+  RCLCPP_INFO(this->get_logger(), "Received raw goal [%f, %f, %f]", msg.pose.position.x, msg.pose.position.y, msg.pose.position.z);
 
   sub_goals_ = segmentGoal(msg);
+  current_goal_ = sub_goals_.at(0);
 
   if (adjust_goal_altitude_) {
     adjustGoalAltitude(current_goal_);
