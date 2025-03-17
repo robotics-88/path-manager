@@ -30,7 +30,6 @@ inline double distance(const geometry_msgs::msg::PoseStamped& a, const geometry_
 PathManager::PathManager()
   : Node("path_manager")
   , tf_listener_(nullptr)
-  , goal_active_(false)
   , goal_init_(false)
   , adjustment_margin_(0.5)
   , setpoint_acceptance_radius_(0.5)
@@ -46,6 +45,7 @@ PathManager::PathManager()
   , target_altitude_(3.0)
   , planning_horizon_(6.0)
   , velocity_setpoint_speed_(0.5)
+  , explorable_goals_(true)
 {
 
   // Params
@@ -62,6 +62,7 @@ PathManager::PathManager()
   this->declare_parameter("do_slam", do_slam_);
   this->declare_parameter("planning_horizon", planning_horizon_);
   this->declare_parameter("velocity_setpoint_speed", velocity_setpoint_speed_);
+  this->declare_parameter("explorable_goals", explorable_goals_);
 
   std::string raw_goal_topic;
   // Params
@@ -79,17 +80,22 @@ PathManager::PathManager()
   this->get_parameter("planning_horizon", planning_horizon_);
   planning_horizon_ -= 1; // Subtract 1 for a safety margin to ensure the segmented goals are fully inside the regional cloud
   this->get_parameter("velocity_setpoint_speed", velocity_setpoint_speed_);
+  this->get_parameter("explorable_goals", explorable_goals_);
   
   // Subscribers
   position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/local_position/pose", rclcpp::SensorDataQoS(), std::bind(&PathManager::positionCallback, this, _1));
+  path_sub_ = this->create_subscription<nav_msgs::msg::Path>("/search_node/trajectory_position", 10, std::bind(&PathManager::setCurrentPath, this, _1));
   percent_above_sub_ = this->create_subscription<std_msgs::msg::Float32>("/pcl_analysis/percent_above", 10, std::bind(&PathManager::percentAboveCallback, this, _1));
   pointcloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 10, std::bind(&PathManager::pointCloudCallback, this, _1));
   raw_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(raw_goal_topic, 10, std::bind(&PathManager::rawGoalCallback, this, _1));
+  clicked_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/goal_pose", 10, std::bind(&PathManager::rawGoalCallback, this, _1));
+
 
   // Publishers
   mavros_setpoint_raw_pub_ = this->create_publisher<mavros_msgs::msg::PositionTarget>("/mavros/setpoint_raw/local", rclcpp::SensorDataQoS());
   setpoint_viz_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("setpoint_viz", 10);
   actual_path_pub_ = this->create_publisher<nav_msgs::msg::Path>("actual_path", 10);
+  goal_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal", 10);
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_map_(new pcl::PointCloud<pcl::PointXYZ>());
 }
@@ -115,9 +121,14 @@ void PathManager::updateGoal() {
   if (sub_goals_.size() > 0) {
     if (isCloseToGoal()) {
 
+      // Reset path
+      path_.clear();
+
       // Remove sub goal from list, and set new current goal.
+      RCLCPP_INFO(this->get_logger(), "Sub-goal complete");
       sub_goals_.erase(sub_goals_.begin());
       if (sub_goals_.size() == 0) {
+        RCLCPP_INFO(this->get_logger(), "Final goal complete");
         return;
       }
 
@@ -133,35 +144,33 @@ void PathManager::updateGoal() {
 }
 
 void PathManager::updateSetpoint() {
+
+  // No path, nothing to do
+  if (path_.size() < 1)
+    return;
+
   // Check if we are close enough to current setpoint to get the next part of the
   // path. Do as a while loop so that we publish the furthest setpoint that is still within the acceptance radius
-  if (path_.size() > 0) {
-    
-    goal_active_ = true;
-
-    while (isCloseToSetpoint() || isCloserThanSetpoint()) {
-      // Get furthest ahead setpoint and set as current setpoint
-      path_.erase(path_.begin());
-      if (path_.size() == 0) {
-        return;
-      }
-
-      current_setpoint_ = path_[0];
-
-      // Check again, and if outside the range, then publish setpoint outside range. 
-      if (!isCloseToSetpoint() && !isCloserThanSetpoint()) {
-        publishSetpoint(true);
-      }
+  while (isCloseToSetpoint() || isCloserThanSetpoint()) {
+    // Get furthest ahead setpoint and set as current setpoint
+    path_.erase(path_.begin());
+    if (path_.size() == 0) {
+      RCLCPP_INFO(this->get_logger(), "Path complete");
+      return;
     }
 
-    // If last published setpoint is older than 1 second, republish it. This is to get the drone "un-stuck" if it goes off path
-    if (last_published_setpoint_time_.seconds() > 0 && this->get_clock()->now() - last_published_setpoint_time_ > 1s) {
-      RCLCPP_INFO(this->get_logger(), "Path manager republishing last setpoint");
-      publishSetpoint(false);
+    current_setpoint_ = path_[0];
+
+    // Check again, and if outside the range, then publish setpoint outside range. 
+    if (!isCloseToSetpoint() && !isCloserThanSetpoint()) {
+      publishSetpoint(true);
     }
   }
-  else {
-    goal_active_ = false;
+
+  // If last published setpoint is older than 1 second, republish it. This is to get the drone "un-stuck" if it goes off path
+  if (last_published_setpoint_time_.seconds() > 0 && this->get_clock()->now() - last_published_setpoint_time_ > 1s) {
+    RCLCPP_INFO(this->get_logger(), "Path manager republishing last setpoint");
+    publishSetpoint(false);
   }
 }
 
@@ -178,12 +187,20 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
   // Determine if open area and path planner is needed
   bool open_area = percent_above_ < percent_above_threshold_ && percent_above_ >= 0.0f;
 
+  // Adjust altitude based on terrain
+  if (adjust_altitude_volume_) {
+    double altitude;
+    adjustAltitudeVolume(current_goal_.pose.position, altitude);
+    current_goal_.pose.position.z = altitude;
+  }
+
+
+
+  open_area = false; // TESTING - REMOVE. Temporarily disable open area check for simplicity
+
   if (open_area || !do_slam_) {
-    if (adjust_altitude_volume_) {
-      double altitude;
-      adjustAltitudeVolume(current_goal_.pose.position, altitude);
-      current_goal_.pose.position.z = altitude;
-    }
+
+    // Open area, request goal directly not through path planner
 
     // Get goal data
     auto direction_vec = subtractPoints(current_goal_.pose.position, current_pos_.pose.position);
@@ -214,19 +231,11 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
     setpoint_viz_pub_->publish(viz_msg);
   }
   else {
-    current_goal_ = requestGoal(current_goal_);
+    if (explorable_goals_)
+      current_goal_ = requestGoal(current_goal_);
     
-    if (adjust_altitude_volume_) {
-      double altitude;
-      adjustAltitudeVolume(current_goal_.pose.position, altitude);
-      current_goal_.pose.position.z = altitude;
-    }
-    // Request path with 3 attempts
-    for (unsigned i = 0; i < 3; i++) {
-      RCLCPP_INFO(this->get_logger(), "Path manager publishing PLANNER goal: [%f, %f, %f]", current_goal_.pose.position.x, current_goal_.pose.position.y, current_goal_.pose.position.z);
-      if (requestPath(current_goal_))
-        break;
-    }
+    // Request path from path planner
+    requestPath(current_goal_);
   }
 }
 
@@ -280,26 +289,41 @@ bool PathManager::requestPath(const geometry_msgs::msg::PoseStamped goal) {
   auto request = std::make_shared<messages_88::srv::RequestPath::Request>();
   request->goal = goal;
 
-  auto result = client->async_send_request(request);
+  RCLCPP_INFO(this->get_logger(), "Path manager requesting PLANNER path for goal: [%f, %f, %f]", goal.pose.position.x, goal.pose.position.y, goal.pose.position.z);
+  
+  // Publish setpoint vizualizer
+  auto direction_vec = subtractPoints(current_goal_.pose.position, current_pos_.pose.position);
+  double yaw_target = atan2(direction_vec.y, direction_vec.x);
+  geometry_msgs::msg::PoseStamped viz_msg;
+  viz_msg.header.stamp = this->get_clock()->now();
+  viz_msg.header.frame_id = mavros_map_frame_;
+  viz_msg.pose.position = goal.pose.position;
+  tf2::Quaternion setpoint_q;
+  setpoint_q.setRPY(0.0, 0.0, yaw_target);
+  tf2::convert(setpoint_q, viz_msg.pose.orientation);
 
-  if (rclcpp::spin_until_future_complete(node, result) ==
-    rclcpp::FutureReturnCode::SUCCESS)
-  {
-    auto res_ptr = result.get();
+  setpoint_viz_pub_->publish(viz_msg);
 
-    // If successful, set path
-    if (res_ptr->success) {
-      setCurrentPath(res_ptr->path);
-      return true;
+  for (unsigned i = 0; i < 3; i++) {
+    auto result = client->async_send_request(request);
+    if (rclcpp::spin_until_future_complete(node, result, 5s) ==
+      rclcpp::FutureReturnCode::SUCCESS)
+    {
+      auto res_ptr = result.get();
+      if (res_ptr->success) {
+        // setCurrentPath(res_ptr->path);
+        return true;
+      }
+      else {
+        RCLCPP_WARN(this->get_logger(), "Path planner failed to create valid path");
+      }
+
+    } else {
+      RCLCPP_ERROR(this->get_logger(), "Failed to call path planner service");
     }
-    else {
-      RCLCPP_WARN(this->get_logger(), "Path planner failed to create valid path");
-    }
-
-  } else {
-    RCLCPP_ERROR(this->get_logger(), "Failed to call path planner service");
   }
 
+  RCLCPP_WARN(this->get_logger(), "Path planner failed to create valid path after 3 attempts!");
   return false;
 }
 
@@ -320,7 +344,6 @@ void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_posi
       try
       {
           target_altitude = result.get()->target_altitude;
-          RCLCPP_INFO(this->get_logger(), "Got elevation %f", target_altitude);
       }
       catch (const std::exception &e)
       {
@@ -339,18 +362,20 @@ void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
   cloud_map_ = cloud;
 
   // TODO: this should probably go in positioncallback for cleanliness
-  if (goal_active_) {
-    int check_inds = 40; // Same as path planner for now
-    int sz = path_.size();
-    check_inds = std::min(check_inds, sz);
-    for (int ii = 0; ii < check_inds; ii++) {
-      geometry_msgs::msg::PoseStamped pose = path_.at(ii);
-      bool safety = isSafe(cloud_map_, pose.pose.position);
-      if (!safety) {
-        publishGoal(current_goal_);
-      }
-    }
-  }
+  // if (path_.size() > 0) {
+  //   int check_inds = 40; // Same as path planner for now
+  //   int sz = path_.size();
+  //   check_inds = std::min(check_inds, sz);
+  //   for (int ii = 0; ii < check_inds; ii++) {
+  //     geometry_msgs::msg::PoseStamped pose = path_.at(ii);
+  //     bool safety = isSafe(cloud_map_, pose.pose.position);
+  //     if (!safety) {
+  //       RCLCPP_INFO(this->get_logger(), "Path Manager: Path is not safe, replanning");
+  //       path_.clear();
+  //       publishGoal(current_goal_);
+  //     }
+  //   }
+  // }
 
   if (goal_init_ && adjust_goal_altitude_) {
     if (adjustGoalAltitude(current_goal_)) {
@@ -541,6 +566,11 @@ void PathManager::setCurrentPath(const nav_msgs::msg::Path &path) {
 
 void PathManager::publishSetpoint(bool use_velocity) {
 
+  if (path_.size() == 0) {
+    RCLCPP_WARN(this->get_logger(), "No path to publish setpoint");
+    return;
+  }
+
   if (adjust_setpoint_)
     adjustSetpoint();
 
@@ -550,10 +580,7 @@ void PathManager::publishSetpoint(bool use_velocity) {
   msg.header.stamp = this->get_clock()->now();
   msg.position = current_setpoint_.pose.position;
 
-  int viable_pts_ahead = 5;
-  if (path_.size() < viable_pts_ahead) {
-    viable_pts_ahead = path_.size();
-  }
+  int viable_pts_ahead = std::min(5, static_cast<int>(path_.size()));
   // Create vector pointing from current setpoint to point ahead on path, using 5 points ahead as rough estimation
   // TODO play with this number
   auto vec = subtractPoints(path_[viable_pts_ahead].pose.position, current_setpoint_.pose.position);
