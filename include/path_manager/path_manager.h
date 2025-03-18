@@ -78,10 +78,7 @@ class PathManager : public rclcpp::Node
         rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr          percent_above_sub_;
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr   pointcloud_sub_;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
-<<<<<<< HEAD
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr clicked_goal_sub_;
-=======
->>>>>>> main
         
         rclcpp::Publisher<mavros_msgs::msg::PositionTarget>::SharedPtr   mavros_setpoint_raw_pub_;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr    setpoint_viz_pub_;
