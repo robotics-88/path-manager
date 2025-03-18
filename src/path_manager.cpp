@@ -187,8 +187,6 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
   // Determine if open area and path planner is needed
   bool open_area = percent_above_ < percent_above_threshold_ && percent_above_ >= 0.0f;
 
-  open_area = false; // For testing
-
   if (open_area || !do_slam_) {
     // Open area, request goal directly not through path planner
 
