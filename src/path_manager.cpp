@@ -187,20 +187,16 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
   // Determine if open area and path planner is needed
   bool open_area = percent_above_ < percent_above_threshold_ && percent_above_ >= 0.0f;
 
-  // Adjust altitude based on terrain
-  if (adjust_altitude_volume_) {
-    double altitude;
-    adjustAltitudeVolume(current_goal_.pose.position, altitude);
-    current_goal_.pose.position.z = altitude;
-  }
-
-
-
-  open_area = false; // TESTING - REMOVE. Temporarily disable open area check for simplicity
+  open_area = false; // For testing
 
   if (open_area || !do_slam_) {
-
     // Open area, request goal directly not through path planner
+
+    if (adjust_altitude_volume_) {
+      double altitude;
+      adjustAltitudeVolume(current_goal_.pose.position, altitude);
+      current_goal_.pose.position.z = altitude;
+    }
 
     // Get goal data
     auto direction_vec = subtractPoints(current_goal_.pose.position, current_pos_.pose.position);
@@ -232,14 +228,20 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
   }
   else {
     if (explorable_goals_)
-      current_goal_ = requestGoal(current_goal_);
+      current_goal_ = requestExplorableGoal(current_goal_);
+
+    if (adjust_altitude_volume_) {
+      double altitude;
+      adjustAltitudeVolume(current_goal_.pose.position, altitude);
+      current_goal_.pose.position.z = altitude;
+    }
     
     // Request path from path planner
     requestPath(current_goal_);
   }
 }
 
-geometry_msgs::msg::PoseStamped PathManager::requestGoal(const geometry_msgs::msg::PoseStamped goal) {
+geometry_msgs::msg::PoseStamped PathManager::requestExplorableGoal(const geometry_msgs::msg::PoseStamped goal) {
   std::shared_ptr<rclcpp::Node> get_exploregoal_node = rclcpp::Node::make_shared("get_exploregoal_node");
   auto get_goal_client = get_exploregoal_node->create_client<messages_88::srv::RequestGoal>("/explorable_goal");
   auto goal_req = std::make_shared<messages_88::srv::RequestGoal::Request>();
@@ -247,7 +249,7 @@ geometry_msgs::msg::PoseStamped PathManager::requestGoal(const geometry_msgs::ms
 
   auto result = get_goal_client->async_send_request(goal_req);
   geometry_msgs::msg::Pose output_goal;
-  if (rclcpp::spin_until_future_complete(get_exploregoal_node, result) ==
+  if (rclcpp::spin_until_future_complete(get_exploregoal_node, result, 1s) ==
       rclcpp::FutureReturnCode::SUCCESS)
   {
 
@@ -304,26 +306,23 @@ bool PathManager::requestPath(const geometry_msgs::msg::PoseStamped goal) {
 
   setpoint_viz_pub_->publish(viz_msg);
 
-  for (unsigned i = 0; i < 3; i++) {
-    auto result = client->async_send_request(request);
-    if (rclcpp::spin_until_future_complete(node, result, 5s) ==
-      rclcpp::FutureReturnCode::SUCCESS)
-    {
-      auto res_ptr = result.get();
-      if (res_ptr->success) {
-        // setCurrentPath(res_ptr->path);
-        return true;
-      }
-      else {
-        RCLCPP_WARN(this->get_logger(), "Path planner failed to create valid path");
-      }
-
-    } else {
-      RCLCPP_ERROR(this->get_logger(), "Failed to call path planner service");
+  auto result = client->async_send_request(request);
+  if (rclcpp::spin_until_future_complete(node, result, 10s) ==
+    rclcpp::FutureReturnCode::SUCCESS)
+  {
+    auto res_ptr = result.get();
+    if (res_ptr->success) {
+      // setCurrentPath(res_ptr->path);
+      return true;
     }
+    else {
+      RCLCPP_WARN(this->get_logger(), "Path planner failed to create valid path");
+    }
+
+  } else {
+    RCLCPP_ERROR(this->get_logger(), "Failed to call path planner service");
   }
 
-  RCLCPP_WARN(this->get_logger(), "Path planner failed to create valid path after 3 attempts!");
   return false;
 }
 
@@ -337,7 +336,7 @@ void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_posi
   elevation_req->height = 8;
 
   auto result = get_elevation_client->async_send_request(elevation_req);
-  if (rclcpp::spin_until_future_complete(get_elevation_node, result) ==
+  if (rclcpp::spin_until_future_complete(get_elevation_node, result, 1s) ==
       rclcpp::FutureReturnCode::SUCCESS)
   {
 

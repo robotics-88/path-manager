@@ -12,6 +12,7 @@
     <arg name="planning_horizon" default="6.0"/>
     <arg name="velocity_setpoint_speed" default="0.5"/>
     <arg name="explorable_goals" default="true"/>
+    <arg name="num_retries" default="3"/>
 
     <node pkg="path_manager" exec="path_manager_node" output="screen">
         <param name="mavros_map_frame" value="$(var mavros_map_frame)"/>
@@ -27,5 +28,6 @@
         <param name="planning_horizon" value="$(var planning_horizon)"/>
         <param name="velocity_setpoint_speed" value="$(var velocity_setpoint_speed)"/>
         <param name="explorable_goals" value="$(var explorable_goals)"/>
+        <param name="num_retries" value="$(var num_retries)"/>
     </node>
 </launch>
