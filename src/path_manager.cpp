@@ -358,7 +358,8 @@ void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
   pcl::fromROSMsg(msg, *cloud);
   cloud_map_ = cloud;
 
-  // TODO: this should probably go in positioncallback for cleanliness
+  // Commented as path planner currently handles this, but this is a safety check for the path.
+  
   // if (path_.size() > 0) {
   //   int check_inds = 40; // Same as path planner for now
   //   int sz = path_.size();
