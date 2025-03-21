@@ -49,6 +49,7 @@ class PathManager : public rclcpp::Node
         bool adjust_setpoint_;
         bool adjust_altitude_volume_;
         bool do_slam_;
+        bool explorable_goals_;
         geometry_msgs::msg::PoseStamped current_pos_;
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_map_;
 
@@ -60,7 +61,6 @@ class PathManager : public rclcpp::Node
         rclcpp::Time last_published_setpoint_time_;
 
         geometry_msgs::msg::PoseStamped current_goal_;
-        bool goal_active_;
         bool goal_init_;
         float adjustment_margin_;
 
@@ -74,13 +74,16 @@ class PathManager : public rclcpp::Node
         std::string frame_id_;
 
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr position_sub_;
+        rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr             path_sub_;
         rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr          percent_above_sub_;
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr   pointcloud_sub_;
         rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
+        rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr clicked_goal_sub_;
         
         rclcpp::Publisher<mavros_msgs::msg::PositionTarget>::SharedPtr   mavros_setpoint_raw_pub_;
         rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr    setpoint_viz_pub_;
         rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr                actual_path_pub_;
+        rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr    goal_pub_;
 
         void updateGoal();
         void updateSetpoint();
@@ -105,7 +108,7 @@ class PathManager : public rclcpp::Node
         bool isCloserThanSetpoint();
         bool adjustGoalAltitude(geometry_msgs::msg::PoseStamped goal);
         void publishGoal(geometry_msgs::msg::PoseStamped goal);
-        geometry_msgs::msg::PoseStamped requestGoal(const geometry_msgs::msg::PoseStamped goal);
+        geometry_msgs::msg::PoseStamped requestExplorableGoal(const geometry_msgs::msg::PoseStamped goal);
         bool requestPath(const geometry_msgs::msg::PoseStamped goal);
         void adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude);
 };
