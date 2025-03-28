@@ -344,7 +344,10 @@ void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_posi
 
       try
       {
-          target_altitude = result.get()->target_altitude;
+          auto result_object = result.get();
+          min_altitude = result_object->min_altitude;
+          max_altitude = result_object->max_altitude;
+          target_altitude = result_object->target_altitude;
       }
       catch (const std::exception &e)
       {
