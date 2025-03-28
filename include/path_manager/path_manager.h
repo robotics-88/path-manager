@@ -68,6 +68,8 @@ class PathManager : public rclcpp::Node
         double target_altitude_;
         double planning_horizon_;
         double velocity_setpoint_speed_;
+        double min_altitude_;
+        double max_altitude_;
 
         float percent_above_;
 
@@ -110,7 +112,7 @@ class PathManager : public rclcpp::Node
         void publishGoal(geometry_msgs::msg::PoseStamped goal);
         geometry_msgs::msg::PoseStamped requestExplorableGoal(const geometry_msgs::msg::PoseStamped goal);
         bool requestPath(const geometry_msgs::msg::PoseStamped goal);
-        void adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude);
+        void adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude, double &min_altitude, double &max_altitude);
 };
 
 }
