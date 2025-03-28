@@ -192,7 +192,10 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
 
     if (adjust_altitude_volume_) {
       double altitude;
-      adjustAltitudeVolume(current_goal_.pose.position, altitude);
+      if (!adjustAltitudeVolume(current_goal_.pose.position, altitude)) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to adjust altitude volume, not publishing goal");
+        return;
+      }
       current_goal_.pose.position.z = altitude;
     }
 
@@ -230,7 +233,10 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
 
     if (adjust_altitude_volume_) {
       double altitude;
-      adjustAltitudeVolume(current_goal_.pose.position, altitude);
+      if (!adjustAltitudeVolume(current_goal_.pose.position, altitude)) {
+        RCLCPP_ERROR(this->get_logger(), "Failed to adjust altitude volume, not publishing goal");
+        return;
+      }
       current_goal_.pose.position.z = altitude;
     }
     
@@ -324,7 +330,7 @@ bool PathManager::requestPath(const geometry_msgs::msg::PoseStamped goal) {
   return false;
 }
 
-void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude) {
+bool PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude) {
   std::shared_ptr<rclcpp::Node> get_elevation_node = rclcpp::Node::make_shared("get_elevation_node");
   auto get_elevation_client = get_elevation_node->create_client<messages_88::srv::GetMapData>("/task_manager/get_map_data");
   auto elevation_req = std::make_shared<messages_88::srv::GetMapData::Request>();
@@ -337,20 +343,18 @@ void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_posi
   if (rclcpp::spin_until_future_complete(get_elevation_node, result, 1s) ==
       rclcpp::FutureReturnCode::SUCCESS)
   {
-
-      try
-      {
-          target_altitude = result.get()->target_altitude;
-      }
-      catch (const std::exception &e)
-      {
-          target_altitude = target_altitude_;
-          RCLCPP_ERROR(this->get_logger(), "Failed to get elevation result, using default alt of %fm", target_altitude);
-      }
+    if (result.get()->success) {
+      target_altitude = result.get()->ret_altitude;
+    } else {
+      RCLCPP_ERROR(this->get_logger(), "Failed to get elevation result");
+      return false;
+    }
       
   } else {
-      RCLCPP_ERROR(this->get_logger(), "Failed to get elevation");
+    RCLCPP_ERROR(this->get_logger(), "Failed to call elevation service");
+    return false;
   }
+  return true;
 }
 
 void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
