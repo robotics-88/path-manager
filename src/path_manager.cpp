@@ -97,7 +97,7 @@ PathManager::PathManager()
   actual_path_pub_ = this->create_publisher<nav_msgs::msg::Path>("actual_path", 10);
   goal_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal", 10);
 
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_map_(new pcl::PointCloud<pcl::PointXYZ>());
+  cloud_map_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
 }
 
 PathManager::~PathManager() {}
@@ -120,9 +120,6 @@ void PathManager::updateGoal() {
   // Publish next goal when we have reached current one
   if (sub_goals_.size() > 0) {
     if (isCloseToGoal()) {
-
-      // Reset path
-      path_.clear();
 
       // Remove sub goal from list, and set new current goal.
       RCLCPP_INFO(this->get_logger(), "Sub-goal complete");
@@ -354,26 +351,7 @@ void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_posi
 }
 
 void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>());
-  pcl::fromROSMsg(msg, *cloud);
-  cloud_map_ = cloud;
-
-  // Commented as path planner currently handles this, but this is a safety check for the path.
-  
-  // if (path_.size() > 0) {
-  //   int check_inds = 40; // Same as path planner for now
-  //   int sz = path_.size();
-  //   check_inds = std::min(check_inds, sz);
-  //   for (int ii = 0; ii < check_inds; ii++) {
-  //     geometry_msgs::msg::PoseStamped pose = path_.at(ii);
-  //     bool safety = isSafe(cloud_map_, pose.pose.position);
-  //     if (!safety) {
-  //       RCLCPP_INFO(this->get_logger(), "Path Manager: Path is not safe, replanning");
-  //       path_.clear();
-  //       publishGoal(current_goal_);
-  //     }
-  //   }
-  // }
+  pcl::fromROSMsg(msg, *cloud_map_);
 
   if (goal_init_ && adjust_goal_altitude_) {
     if (adjustGoalAltitude(current_goal_)) {
@@ -522,22 +500,6 @@ bool PathManager::adjustGoalAltitude(geometry_msgs::msg::PoseStamped goal) {
   return false;
 }
 
-// pcl::PointCloud<pcl::PointXYZ> PathManager::transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in) {
-//   pcl::PointCloud<pcl::PointXYZ> cloud_out;
-
-//   geometry_msgs::msg::TransformStamped pcl_map_tf;
-//   try {
-//     pcl_map_tf = tf_buffer_->lookupTransform(mavros_map_frame_, cloud_in.header.frame_id, tf2::TimePointZero);
-//   }
-//   catch (tf2::TransformException &ex) {
-//     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 10000, "Path Manager: %s",ex.what());
-//     return cloud_out;
-//   }
-//   pcl_ros::transformPointCloud(cloud_in, cloud_out, pcl_map_tf);
-
-//   return cloud_out;
-// }
-
 void PathManager::setCurrentPath(const nav_msgs::msg::Path &path) {
 
   RCLCPP_INFO(this->get_logger(), "Received path, target position [%f, %f, %f]",
@@ -679,13 +641,6 @@ void PathManager::adjustSetpoint() {
     current_setpoint_.pose.position.y = closest_point.y + dist_y * scale_factor;
     current_setpoint_.pose.position.z = closest_point.z + dist_z * scale_factor;
   }
-}
-
-bool PathManager::isSafe(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, const geometry_msgs::msg::Point point_in) {
-  float dist;
-  pcl::PointXYZ ignore_point;
-  findClosestPointInCloud(cloud, point_in, ignore_point, dist);
-  return dist > obstacle_dist_threshold_;
 }
 
 void PathManager::findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, geometry_msgs::msg::Point point_in, 
