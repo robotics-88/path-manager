@@ -231,6 +231,7 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
     if (adjust_altitude_volume_) {
       double altitude;
       adjustAltitudeVolume(current_goal_.pose.position, altitude, min_altitude_, max_altitude_);
+      current_goal_.pose.position.z = altitude; // Adjust the goal altitude based on the volume
     }
 
     if (explorable_goals_)
