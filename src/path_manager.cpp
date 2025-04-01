@@ -340,8 +340,9 @@ bool PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_posi
   if (rclcpp::spin_until_future_complete(get_elevation_node, result, 1s) ==
       rclcpp::FutureReturnCode::SUCCESS)
   {
-    if (result.get()->success) {
-      target_altitude = result.get()->target_altitude;
+    auto response = result.get();
+    if (response->success) {
+      target_altitude = response->target_altitude;
     } else {
       RCLCPP_ERROR(this->get_logger(), "Failed to get elevation result");
       return false;
