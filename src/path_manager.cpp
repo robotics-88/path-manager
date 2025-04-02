@@ -345,19 +345,15 @@ bool PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_posi
   if (rclcpp::spin_until_future_complete(get_elevation_node, result, 1s) ==
       rclcpp::FutureReturnCode::SUCCESS)
   {
-
-      try
-      {
-          auto result_object = result.get();
-          min_altitude = result_object->min_altitude;
-          max_altitude = result_object->max_altitude;
-          target_altitude = result_object->target_altitude;
-      }
-      catch (const std::exception &e)
-      {
-          target_altitude = target_altitude_;
-          RCLCPP_ERROR(this->get_logger(), "Failed to get elevation result, using default alt of %fm", target_altitude);
-      }
+    auto response = result.get();
+    if (response->success) {
+      target_altitude = response->target_altitude;
+      min_altitude = response->min_altitude;
+      max_altitude = response->max_altitude;
+    } else {
+      RCLCPP_ERROR(this->get_logger(), "Failed to get elevation result");
+      return false;
+    }
       
   } else {
     RCLCPP_ERROR(this->get_logger(), "Failed to call elevation service");
