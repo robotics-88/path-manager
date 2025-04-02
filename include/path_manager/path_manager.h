@@ -96,14 +96,12 @@ class PathManager : public rclcpp::Node
         // void livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
         void rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg);
 
-        // pcl::PointCloud<pcl::PointXYZ> transformCloudToMapFrame(pcl::PointCloud<pcl::PointXYZ> cloud_in);
         void setCurrentPath(const nav_msgs::msg::Path &path);
         void publishSetpoint(bool use_velocity);
         bool isCloseToSetpoint();
         void adjustSetpoint();
         void findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, geometry_msgs::msg::Point point_in, 
                                               pcl::PointXYZ &closest_point, float &closest_point_distance);
-        bool isSafe(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, const geometry_msgs::msg::Point point_in);
         std::vector<geometry_msgs::msg::PoseStamped> segmentGoal(geometry_msgs::msg::PoseStamped goal);
 
         bool isCloseToGoal();
@@ -112,7 +110,7 @@ class PathManager : public rclcpp::Node
         void publishGoal(geometry_msgs::msg::PoseStamped goal);
         geometry_msgs::msg::PoseStamped requestExplorableGoal(const geometry_msgs::msg::PoseStamped goal);
         bool requestPath(const geometry_msgs::msg::PoseStamped goal);
-        void adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude, double &min_altitude, double &max_altitude);
+        bool adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude, double &min_altitude, double &max_altitude);
 };
 
 }
