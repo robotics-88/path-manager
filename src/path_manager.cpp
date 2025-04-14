@@ -45,6 +45,8 @@ PathManager::PathManager()
   , target_altitude_(3.0)
   , planning_horizon_(6.0)
   , velocity_setpoint_speed_(0.5)
+  , min_altitude_(3.0)
+  , max_altitude_(6.0)
   , explorable_goals_(true)
 {
 
@@ -83,7 +85,7 @@ PathManager::PathManager()
   this->get_parameter("explorable_goals", explorable_goals_);
   
   // Subscribers
-  position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/local_position/pose", rclcpp::SensorDataQoS(), std::bind(&PathManager::positionCallback, this, _1));
+  position_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/vision_pose/pose", rclcpp::SensorDataQoS(), std::bind(&PathManager::positionCallback, this, _1));
   path_sub_ = this->create_subscription<nav_msgs::msg::Path>("/search_node/trajectory_position", 10, std::bind(&PathManager::setCurrentPath, this, _1));
   percent_above_sub_ = this->create_subscription<std_msgs::msg::Float32>("/pcl_analysis/percent_above", 10, std::bind(&PathManager::percentAboveCallback, this, _1));
   pointcloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/cloud_registered_map", 10, std::bind(&PathManager::pointCloudCallback, this, _1));
@@ -189,7 +191,7 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
 
     if (adjust_altitude_volume_) {
       double altitude;
-      if (!adjustAltitudeVolume(current_goal_.pose.position, altitude)) {
+      if (!adjustAltitudeVolume(current_goal_.pose.position, altitude, min_altitude_, max_altitude_)) {
         RCLCPP_ERROR(this->get_logger(), "Failed to adjust altitude volume, not publishing goal");
         return;
       }
@@ -228,17 +230,18 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
     setpoint_viz_pub_->publish(viz_msg);
   }
   else {
-    if (explorable_goals_)
-      current_goal_ = requestExplorableGoal(current_goal_);
 
     if (adjust_altitude_volume_) {
       double altitude;
-      if (!adjustAltitudeVolume(current_goal_.pose.position, altitude)) {
+      if (!adjustAltitudeVolume(current_goal_.pose.position, altitude, min_altitude_, max_altitude_)) {
         RCLCPP_ERROR(this->get_logger(), "Failed to adjust altitude volume, not publishing goal");
         return;
       }
-      current_goal_.pose.position.z = altitude;
+      current_goal_.pose.position.z = altitude; // Adjust the goal altitude based on the volume
     }
+
+    if (explorable_goals_)
+      current_goal_ = requestExplorableGoal(current_goal_);
     
     // Request path from path planner
     requestPath(current_goal_);
@@ -250,6 +253,8 @@ geometry_msgs::msg::PoseStamped PathManager::requestExplorableGoal(const geometr
   auto get_goal_client = get_exploregoal_node->create_client<messages_88::srv::RequestGoal>("/explorable_goal");
   auto goal_req = std::make_shared<messages_88::srv::RequestGoal::Request>();
   goal_req->input_goal = goal.pose;
+  goal_req->min_altitude = min_altitude_;
+  goal_req->max_altitude = max_altitude_;
 
   auto result = get_goal_client->async_send_request(goal_req);
   geometry_msgs::msg::Pose output_goal;
@@ -329,7 +334,7 @@ bool PathManager::requestPath(const geometry_msgs::msg::PoseStamped goal) {
   return false;
 }
 
-bool PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude) {
+bool PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position, double &target_altitude, double &min_altitude, double &max_altitude) {
   std::shared_ptr<rclcpp::Node> get_elevation_node = rclcpp::Node::make_shared("get_elevation_node");
   auto get_elevation_client = get_elevation_node->create_client<messages_88::srv::GetMapData>("/task_manager/get_map_data");
   auto elevation_req = std::make_shared<messages_88::srv::GetMapData::Request>();
@@ -345,6 +350,8 @@ bool PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_posi
     auto response = result.get();
     if (response->success) {
       target_altitude = response->target_altitude;
+      min_altitude = response->min_altitude;
+      max_altitude = response->max_altitude;
     } else {
       RCLCPP_ERROR(this->get_logger(), "Failed to get elevation result");
       return false;
