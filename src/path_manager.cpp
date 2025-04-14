@@ -202,6 +202,9 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
     auto direction_vec = subtractPoints(current_goal_.pose.position, current_pos_.pose.position);
     double yaw_target = atan2(direction_vec.y, direction_vec.x);
 
+    // Clear path so that we're no longer publishing setpoints on the path
+    path_.clear();
+
     // Publish goal
     mavros_msgs::msg::PositionTarget setpoint;
     setpoint.header.frame_id = mavros_map_frame_;
@@ -318,7 +321,6 @@ bool PathManager::requestPath(const geometry_msgs::msg::PoseStamped goal) {
   {
     auto res_ptr = result.get();
     if (res_ptr->success) {
-      // setCurrentPath(res_ptr->path);
       return true;
     }
     else {
@@ -513,9 +515,6 @@ bool PathManager::adjustGoalAltitude(geometry_msgs::msg::PoseStamped goal) {
 }
 
 void PathManager::setCurrentPath(const nav_msgs::msg::Path &path) {
-
-  RCLCPP_INFO(this->get_logger(), "Received path, target position [%f, %f, %f]",
-                                  path.poses.back().pose.position.x, path.poses.back().pose.position.y, path.poses.back().pose.position.z);
 
   std::vector<geometry_msgs::msg::PoseStamped> poses = path.poses;
 
