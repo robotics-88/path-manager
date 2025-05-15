@@ -19,7 +19,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "pcl_conversions/pcl_conversions.h"
 #include "pcl_ros/transforms.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
-#include "std_msgs/msg/float32.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
@@ -27,8 +26,7 @@ Author: Erin Linebarger <erin@robotics88.com>
 namespace path_manager {
 /**
  * @class PathManager
- * @brief The PathManager class handles things related to the path of the drone, both exploration
- * goals and path management
+ * @brief The PathManager class handles things related to the path of the drone
  */
 class PathManager : public rclcpp::Node {
   public:
@@ -44,12 +42,10 @@ class PathManager : public rclcpp::Node {
     double setpoint_acceptance_radius_;
     double goal_acceptance_radius_;
     double obstacle_dist_threshold_;
-    float percent_above_threshold_;
     bool adjust_goal_altitude_;
     bool adjust_setpoint_;
     bool adjust_altitude_volume_;
     bool do_slam_;
-    bool explorable_goals_;
     geometry_msgs::msg::PoseStamped current_pos_;
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_map_;
 
@@ -68,16 +64,11 @@ class PathManager : public rclcpp::Node {
     double target_altitude_;
     double planning_horizon_;
     double velocity_setpoint_speed_;
-    double min_altitude_;
-    double max_altitude_;
-
-    float percent_above_;
 
     std::string frame_id_;
 
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr position_sub_;
     rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_sub_;
-    rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr percent_above_sub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr clicked_goal_sub_;
@@ -87,16 +78,16 @@ class PathManager : public rclcpp::Node {
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr actual_path_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pub_;
 
+    rclcpp::Client<messages_88::srv::GetMapData>::SharedPtr get_elevation_client_;
+
     void updateGoal();
     void updateSetpoint();
 
-    void percentAboveCallback(const std_msgs::msg::Float32 &msg);
     void positionCallback(const geometry_msgs::msg::PoseStamped &msg);
     void pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg);
-    // void livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
     void rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg);
 
-    void setCurrentPath(const nav_msgs::msg::Path &path);
+    void handlePath(const nav_msgs::msg::Path &path);
     void publishSetpoint(bool use_velocity);
     bool isCloseToSetpoint();
     void adjustSetpoint();
@@ -109,11 +100,10 @@ class PathManager : public rclcpp::Node {
     bool isCloserThanSetpoint();
     bool adjustGoalAltitude(geometry_msgs::msg::PoseStamped goal);
     void publishGoal(geometry_msgs::msg::PoseStamped goal);
-    geometry_msgs::msg::PoseStamped
-    requestExplorableGoal(const geometry_msgs::msg::PoseStamped goal);
-    bool requestPath(const geometry_msgs::msg::PoseStamped goal);
-    bool adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position,
-                              double &target_altitude, double &min_altitude, double &max_altitude);
+    void publishMavrosGoal(const geometry_msgs::msg::PoseStamped &goal);
+    void requestPath(const geometry_msgs::msg::PoseStamped goal);
+    void adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position,
+                              std::function<void(bool, double)> callback);
 };
 
 } // namespace path_manager
