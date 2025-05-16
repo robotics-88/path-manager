@@ -4,9 +4,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 */
 
 #include "path_manager/path_manager.h"
-#include "messages_88/srv/request_goal.hpp"
-#include "messages_88/srv/request_path.hpp"
-//#include "path_manager/common.h"
 #include "task_manager/decco_utilities.h"
 #include "tf2/LinearMath/Quaternion.h"
 #include "tf2/LinearMath/Vector3.h"
@@ -212,7 +209,7 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
                         publishMavrosGoal(goal);
                     } else {
                         // Request path from path planner, which is received in handlePath
-                        requestPath(goal);
+                        goal_pub_->publish(goal);
                     }
                 } else {
                     RCLCPP_ERROR(this->get_logger(), "Failed to adjust goal altitude");
@@ -222,7 +219,7 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
         if (!do_slam_) {
             publishMavrosGoal(goal);
         } else {
-            requestPath(goal);
+            goal_pub_->publish(goal);
         }
     }
 }
@@ -257,22 +254,6 @@ void PathManager::publishMavrosGoal(const geometry_msgs::msg::PoseStamped &goal)
     tf2::convert(setpoint_q, viz_msg.pose.orientation);
 
     setpoint_viz_pub_->publish(viz_msg);
-}
-
-void PathManager::requestPath(const geometry_msgs::msg::PoseStamped goal) {
-
-    // Request path from path planner
-    std::shared_ptr<rclcpp::Node> node = rclcpp::Node::make_shared("request_path_client");
-    rclcpp::Client<messages_88::srv::RequestPath>::SharedPtr client =
-        node->create_client<messages_88::srv::RequestPath>("/path_planner/request_path");
-
-    auto request = std::make_shared<messages_88::srv::RequestPath::Request>();
-    request->goal = goal;
-
-    RCLCPP_INFO(this->get_logger(), "Path manager requesting PLANNER path for goal: [%f, %f, %f]",
-                goal.pose.position.x, goal.pose.position.y, goal.pose.position.z);
-
-    auto result = client->async_send_request(request);
 }
 
 void PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position,
