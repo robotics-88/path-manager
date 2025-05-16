@@ -125,12 +125,12 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
     actual_path_.poses.push_back(current_pos_);
     actual_path_pub_->publish(actual_path_);
 
-    updateGoal();
+    checkAndUpdateGoal();
 
-    updateSetpoint();
+    checkAndUpdateSetpoint();
 }
 
-void PathManager::updateGoal() {
+void PathManager::checkAndUpdateGoal() {
     // Publish next goal when we have reached current one
     if (!sub_goals_.empty() && isCloseToGoal()) {
 
@@ -147,11 +147,11 @@ void PathManager::updateGoal() {
             adjustGoalAltitude(current_goal_);
         }
         // Republish goal here regardless of if it needs adjustment
-        publishGoal(current_goal_);
+        updateGoal(current_goal_);
     }
 }
 
-void PathManager::updateSetpoint() {
+void PathManager::checkAndUpdateSetpoint() {
 
     // No path, nothing to do
     if (path_.size() < 1)
@@ -169,7 +169,7 @@ void PathManager::updateSetpoint() {
         }
 
         current_setpoint_ = path_[0];
-        publishSetpoint(true);
+        updateSetpoint(true);
     }
 
     // If last published setpoint is older than 1 second, republish it. This is to get the drone
@@ -177,7 +177,7 @@ void PathManager::updateSetpoint() {
     if (last_published_setpoint_time_.seconds() > 0 &&
         this->get_clock()->now() - last_published_setpoint_time_ > 1s) {
         RCLCPP_INFO(this->get_logger(), "Path manager republishing last setpoint");
-        publishSetpoint(false);
+        updateSetpoint(false);
     }
 }
 
@@ -192,7 +192,7 @@ bool PathManager::isCloserThanSetpoint() {
     return is_closer;
 }
 
-void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
+void PathManager::updateGoal(geometry_msgs::msg::PoseStamped goal) {
     goal.header.frame_id = mavros_map_frame_;
 
     if (adjust_altitude_volume_) {
@@ -206,10 +206,11 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
                     RCLCPP_INFO(this->get_logger(), "Setting goal altitude to: %f", altitude);
                     if (!do_slam_) {
                         // Publish goal directly as MAVROS setpoint if not using path planner
-                        publishMavrosGoal(goal);
+                        publishGoalAsMavrosSetpoint(goal);
                     } else {
-                        // Request path from path planner, which is received in handlePath
-                        goal_pub_->publish(goal);
+                        // Publish to "/goal" topic which requests path from path planner, which is
+                        // received in handlePath
+                        publishGoal(goal);
                     }
                 } else {
                     RCLCPP_ERROR(this->get_logger(), "Failed to adjust goal altitude");
@@ -217,14 +218,27 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
             });
     } else {
         if (!do_slam_) {
-            publishMavrosGoal(goal);
+            publishGoalAsMavrosSetpoint(goal);
         } else {
-            goal_pub_->publish(goal);
+            publishGoal(goal);
         }
     }
 }
 
-void PathManager::publishMavrosGoal(const geometry_msgs::msg::PoseStamped &goal) {
+void PathManager::publishGoal(geometry_msgs::msg::PoseStamped &goal) {
+    // Get orientation (just for visualization)
+    auto direction_vec = subtractPoints(goal.pose.position, current_pos_.pose.position);
+    double yaw_target = atan2(direction_vec.y, direction_vec.x);
+
+    tf2::Quaternion goal_q;
+    goal_q.setRPY(0.0, 0.0, yaw_target);
+    tf2::convert(goal_q, goal.pose.orientation);
+
+    // Publish goal
+    goal_pub_->publish(goal);
+}
+
+void PathManager::publishGoalAsMavrosSetpoint(const geometry_msgs::msg::PoseStamped &goal) {
     // Get goal data
     auto direction_vec = subtractPoints(goal.pose.position, current_pos_.pose.position);
     double yaw_target = atan2(direction_vec.y, direction_vec.x);
@@ -281,7 +295,7 @@ void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
 
     if (goal_init_ && adjust_goal_altitude_) {
         if (adjustGoalAltitude(current_goal_)) {
-            publishGoal(current_goal_);
+            updateGoal(current_goal_);
         }
     }
 }
@@ -298,7 +312,7 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
         adjustGoalAltitude(current_goal_);
     }
 
-    publishGoal(current_goal_);
+    updateGoal(current_goal_);
 }
 
 std::vector<geometry_msgs::msg::PoseStamped>
@@ -424,7 +438,7 @@ void PathManager::handlePath(const nav_msgs::msg::Path &path) {
     current_setpoint_ = path_[0];
 }
 
-void PathManager::publishSetpoint(bool use_velocity) {
+void PathManager::updateSetpoint(bool use_velocity) {
 
     if (path_.size() == 0) {
         RCLCPP_WARN(this->get_logger(), "No path to publish setpoint");

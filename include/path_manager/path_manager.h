@@ -80,15 +80,15 @@ class PathManager : public rclcpp::Node {
 
     rclcpp::Client<messages_88::srv::GetMapData>::SharedPtr get_elevation_client_;
 
-    void updateGoal();
-    void updateSetpoint();
+    void checkAndUpdateGoal();
+    void checkAndUpdateSetpoint();
 
     void positionCallback(const geometry_msgs::msg::PoseStamped &msg);
     void pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg);
     void rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg);
 
     void handlePath(const nav_msgs::msg::Path &path);
-    void publishSetpoint(bool use_velocity);
+    void updateSetpoint(bool use_velocity);
     bool isCloseToSetpoint();
     void adjustSetpoint();
     void findClosestPointInCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
@@ -99,8 +99,9 @@ class PathManager : public rclcpp::Node {
     bool isCloseToGoal();
     bool isCloserThanSetpoint();
     bool adjustGoalAltitude(geometry_msgs::msg::PoseStamped goal);
-    void publishGoal(geometry_msgs::msg::PoseStamped goal);
-    void publishMavrosGoal(const geometry_msgs::msg::PoseStamped &goal);
+    void updateGoal(geometry_msgs::msg::PoseStamped goal);
+    void publishGoal(geometry_msgs::msg::PoseStamped &goal);
+    void publishGoalAsMavrosSetpoint(const geometry_msgs::msg::PoseStamped &goal);
     void requestPath(const geometry_msgs::msg::PoseStamped goal);
     void adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position,
                               std::function<void(bool, double)> callback);
