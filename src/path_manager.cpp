@@ -246,36 +246,6 @@ void PathManager::updateGoal(geometry_msgs::msg::PoseStamped goal) {
             publishGoal(goal);
         }
     }
-
-    
-
-    // if (adjust_altitude_volume_) {
-    //     // Since this involves a service call, run asynchronously and pass lambda as callback
-    //     // function on service response
-    //     adjustAltitudeVolume(
-    //         goal.pose.position, [this, goal](bool success, double altitude) mutable {
-    //             if (success) {
-    //                 goal.pose.position.z = altitude;
-    //                 RCLCPP_INFO(this->get_logger(), "Setting goal altitude to: %f", altitude);
-    //                 if (!do_slam_) {
-    //                     // Publish goal directly as MAVROS setpoint if not using path planner
-    //                     publishGoalAsMavrosSetpoint(goal);
-    //                 } else {
-    //                     // Publish to "/goal" topic which requests path from path planner, which is
-    //                     // received in handlePath
-    //                     publishGoal(goal);
-    //                 }
-    //             } else {
-    //                 RCLCPP_ERROR(this->get_logger(), "Failed to adjust goal altitude");
-    //             }
-    //         });
-    // } else {
-    //     if (!do_slam_) {
-    //         publishGoalAsMavrosSetpoint(goal);
-    //     } else {
-    //         publishGoal(goal);
-    //     }
-    // }
 }
 
 void PathManager::publishGoal(geometry_msgs::msg::PoseStamped &goal) {
@@ -322,86 +292,6 @@ void PathManager::publishGoalAsMavrosSetpoint(const geometry_msgs::msg::PoseStam
 
     setpoint_viz_pub_->publish(viz_msg);
 }
-
-// void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
-//     current_goal_.header.frame_id =
-//         mavros_map_frame_; // Path planner doesn't return headers, it seems
-//     // Determine if open area and path planner is needed
-//     bool open_area = percent_above_ < percent_above_threshold_ && percent_above_ >= 0.0f;
-
-//     if (open_area || !do_slam_) {
-//         // Open area, request goal directly not through path planner
-
-//         if (adjust_altitude_volume_) {
-//             double altitude;
-//             if (!adjustAltitudeVolume(current_goal_.pose.position, altitude, min_altitude_,
-//                                       max_altitude_)) {
-//                 RCLCPP_ERROR(this->get_logger(),
-//                              "Failed to adjust altitude volume, not publishing goal");
-//                 return;
-//             }
-//             current_goal_.pose.position.z = altitude;
-//         }
-
-//         // Get goal data
-//         auto direction_vec =
-//             subtractPoints(current_goal_.pose.position, current_pos_.pose.position);
-//         double yaw_target = atan2(direction_vec.y, direction_vec.x);
-
-//         // Clear path so that we're no longer publishing setpoints on the path
-//         path_.clear();
-
-//         // Publish goal
-//         mavros_msgs::msg::PositionTarget setpoint;
-//         setpoint.header.frame_id = mavros_map_frame_;
-//         setpoint.header.stamp = this->get_clock()->now();
-//         setpoint.position = current_goal_.pose.position;
-//         setpoint.yaw = yaw_target;
-//         setpoint.coordinate_frame = setpoint.FRAME_LOCAL_NED;
-//         setpoint.type_mask |= setpoint.IGNORE_AFX | setpoint.IGNORE_AFY | setpoint.IGNORE_AFZ |
-//                               setpoint.IGNORE_VX | setpoint.IGNORE_VY | setpoint.IGNORE_VZ |
-//                               setpoint.IGNORE_YAW_RATE;
-
-//         RCLCPP_INFO(this->get_logger(), "Path manager publishing MAVROS goal: [%f, %f, %f]",
-//                     current_goal_.pose.position.x, current_goal_.pose.position.y,
-//                     current_goal_.pose.position.z);
-//         mavros_setpoint_raw_pub_->publish(setpoint);
-
-//         // Publish setpoint vizualizer (does not include velocity, potential TODO)
-//         geometry_msgs::msg::PoseStamped viz_msg;
-//         viz_msg.header.stamp = this->get_clock()->now();
-//         viz_msg.header.frame_id = mavros_map_frame_;
-//         viz_msg.pose.position = setpoint.position;
-//         tf2::Quaternion setpoint_q;
-//         setpoint_q.setRPY(0.0, 0.0, setpoint.yaw);
-//         tf2::convert(setpoint_q, viz_msg.pose.orientation);
-
-//         setpoint_viz_pub_->publish(viz_msg);
-//     } else {
-
-//         if (adjust_altitude_volume_) {
-//             double altitude;
-//             if (!adjustAltitudeVolume(current_goal_.pose.position, altitude, min_altitude_,
-//                                       max_altitude_)) {
-//                 RCLCPP_ERROR(this->get_logger(),
-//                              "Failed to adjust altitude volume, not publishing goal");
-//                 return;
-//             }
-//             current_goal_.pose.position.z =
-//                 altitude; // Adjust the goal altitude based on the volume
-//         }
-
-//         if (explorable_goals_) {
-//             RCLCPP_INFO(this->get_logger(),
-//                          "Path manager requesting explorable goal for path planner");
-//             geometry_msgs::msg::Pose goal_request = explorer_manager_->makeNewGoal(current_goal_.pose, min_altitude_, max_altitude_);
-//             current_goal_.pose = goal_request;
-//         }
-
-//         // Request path from path planner
-//         requestPath(current_goal_);
-//     }
-// }
 
 bool PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position,
                                        double &target_altitude, double &min_altitude,

@@ -83,7 +83,6 @@ class PathManager : public rclcpp::Node {
 
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr position_sub_;
     rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_sub_;
-    // rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr percent_above_sub_;
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr clicked_goal_sub_;
@@ -96,13 +95,11 @@ class PathManager : public rclcpp::Node {
     void checkAndUpdateGoal();
     void checkAndUpdateSetpoint();
 
-    // void percentAboveCallback(const std_msgs::msg::Float32 &msg);
     void positionCallback(const geometry_msgs::msg::PoseStamped &msg);
     void pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg);
     void rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg);
     
     void handlePath(const nav_msgs::msg::Path &path);
-    // void setCurrentPath(const nav_msgs::msg::Path &path);
     void updateSetpoint(bool use_velocity);
     bool isCloseToSetpoint();
     void adjustSetpoint();
@@ -117,7 +114,6 @@ class PathManager : public rclcpp::Node {
     void updateGoal(geometry_msgs::msg::PoseStamped goal);
     void publishGoal(geometry_msgs::msg::PoseStamped &goal);
     void publishGoalAsMavrosSetpoint(const geometry_msgs::msg::PoseStamped &goal);
-    bool requestPath(const geometry_msgs::msg::PoseStamped goal);
     bool adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position,
                               double &target_altitude, double &min_altitude, double &max_altitude);
 };
