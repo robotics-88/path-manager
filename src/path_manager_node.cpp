@@ -11,7 +11,7 @@ int main(int argc, char **argv) {
   auto pm_node = std::make_shared<path_manager::PathManager>();
   pm_node->initialize();
 
-  rclcpp::executors::SingleThreadedExecutor executor;
+  rclcpp::executors::MultiThreadedExecutor executor;
   executor.add_node(pm_node);
   executor.spin();
   

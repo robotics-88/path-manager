@@ -4,9 +4,6 @@ Author: Erin Linebarger <erin@robotics88.com>
 */
 
 #include "path_manager/path_manager.h"
-#include "messages_88/srv/request_goal.hpp"
-#include "messages_88/srv/request_path.hpp"
-#include "path_manager/common.h"
 #include "task_manager/decco_utilities.h"
 #include "tf2/LinearMath/Quaternion.h"
 #include "tf2/LinearMath/Vector3.h"
@@ -17,13 +14,29 @@ using namespace std::chrono_literals;
 
 namespace path_manager {
 
-template <typename P> tf2::Vector3 toTfVector3(const P &point) {
-    return tf2::Vector3(point.x, point.y, point.z);
+template <typename T> T norm(T x, T y, T z) {
+    return sqrt(x * x + y * y + z * z);
+}
+
+double dotProduct(const geometry_msgs::msg::Point &a, const geometry_msgs::msg::Point &b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+template <typename P> double distance(const P &p1, const P &p2) {
+    return norm((p2.x - p1.x), (p2.y - p1.y), (p2.z - p1.z));
 }
 
 inline double distance(const geometry_msgs::msg::PoseStamped &a,
                        const geometry_msgs::msg::PoseStamped &b) {
     return distance(a.pose.position, b.pose.position);
+}
+
+template <typename P1, typename P2> P1 subtractPoints(const P1 &p1, const P2 &p2) {
+    P1 new_p;
+    new_p.x = p1.x - p2.x;
+    new_p.y = p1.y - p2.y;
+    new_p.z = p1.z - p2.z;
+    return new_p;
 }
 
 PathManager::PathManager()
@@ -93,9 +106,9 @@ void PathManager::initialize() {
         "/mavros/vision_pose/pose", rclcpp::SensorDataQoS(),
         std::bind(&PathManager::positionCallback, this, _1));
     path_sub_ = this->create_subscription<nav_msgs::msg::Path>(
-        "/search_node/trajectory_position", 10, std::bind(&PathManager::setCurrentPath, this, _1));
-    percent_above_sub_ = this->create_subscription<std_msgs::msg::Float32>(
-        "/pcl_analysis/percent_above", 10, std::bind(&PathManager::percentAboveCallback, this, _1));
+        "/search_node/trajectory_position", 10, std::bind(&PathManager::handlePath, this, _1));
+    // percent_above_sub_ = this->create_subscription<std_msgs::msg::Float32>(
+    //     "/pcl_analysis/percent_above", 10, std::bind(&PathManager::percentAboveCallback, this, _1));
     pointcloud_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
         "/cloud_registered_map", 10, std::bind(&PathManager::pointCloudCallback, this, _1));
     raw_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
@@ -124,36 +137,34 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
     actual_path_.poses.push_back(current_pos_);
     actual_path_pub_->publish(actual_path_);
 
-    updateGoal();
+    checkAndUpdateGoal();
 
-    updateSetpoint();
+    checkAndUpdateSetpoint();
 }
 
-void PathManager::updateGoal() {
+
+void PathManager::checkAndUpdateGoal() {
     // Publish next goal when we have reached current one
-    if (sub_goals_.size() > 0) {
-        if (isCloseToGoal()) {
+    if (!sub_goals_.empty() && isCloseToGoal()) {
 
-            // Remove sub goal from list, and set new current goal.
-            RCLCPP_INFO(this->get_logger(), "Sub-goal complete");
-            sub_goals_.erase(sub_goals_.begin());
-            if (sub_goals_.size() == 0) {
-                RCLCPP_INFO(this->get_logger(), "Final goal complete");
-                return;
-            }
-
-            current_goal_ = sub_goals_.at(0);
-
-            if (goal_init_ && adjust_goal_altitude_) {
-                adjustGoalAltitude(current_goal_);
-            }
-            // Republish goal here regardless of if it needs adjustment
-            publishGoal(current_goal_);
+        // Remove sub goal from list, and set new current goal.
+        RCLCPP_INFO(this->get_logger(), "Sub-goal complete");
+        sub_goals_.erase(sub_goals_.begin());
+        if (sub_goals_.size() == 0) {
+            RCLCPP_INFO(this->get_logger(), "Final goal complete");
+            return;
         }
+        current_goal_ = sub_goals_.at(0);
+
+        if (goal_init_ && adjust_goal_altitude_) {
+            adjustGoalAltitude(current_goal_);
+        }
+        // Republish goal here regardless of if it needs adjustment
+        updateGoal(current_goal_);
     }
 }
 
-void PathManager::updateSetpoint() {
+void PathManager::checkAndUpdateSetpoint() {
 
     // No path, nothing to do
     if (path_.size() < 1)
@@ -171,11 +182,7 @@ void PathManager::updateSetpoint() {
         }
 
         current_setpoint_ = path_[0];
-
-        // Check again, and if outside the range, then publish setpoint outside range.
-        if (!isCloseToSetpoint() && !isCloserThanSetpoint()) {
-            publishSetpoint(true);
-        }
+        updateSetpoint(true);
     }
 
     // If last published setpoint is older than 1 second, republish it. This is to get the drone
@@ -183,149 +190,218 @@ void PathManager::updateSetpoint() {
     if (last_published_setpoint_time_.seconds() > 0 &&
         this->get_clock()->now() - last_published_setpoint_time_ > 1s) {
         RCLCPP_INFO(this->get_logger(), "Path manager republishing last setpoint");
-        publishSetpoint(false);
+        updateSetpoint(false);
     }
 }
 
 bool PathManager::isCloserThanSetpoint() {
-    return distance(path_.back(), current_pos_) < distance(path_.back(), current_setpoint_);
+    if (path_.size() < 1)
+        return false;
+
+    auto d = subtractPoints(path_.back().pose.position, current_setpoint_.pose.position);
+    auto r = subtractPoints(current_pos_.pose.position, current_setpoint_.pose.position);
+
+    bool is_closer = dotProduct(r, d) > dotProduct(d, d);
+    return is_closer;
 }
 
-void PathManager::percentAboveCallback(const std_msgs::msg::Float32 &msg) {
-    percent_above_ = msg.data;
-}
+void PathManager::updateGoal(geometry_msgs::msg::PoseStamped goal) {
+    goal.header.frame_id = mavros_map_frame_;
 
-void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
-    current_goal_.header.frame_id =
-        mavros_map_frame_; // Path planner doesn't return headers, it seems
-    // Determine if open area and path planner is needed
-    bool open_area = percent_above_ < percent_above_threshold_ && percent_above_ >= 0.0f;
-
-    if (open_area || !do_slam_) {
-        // Open area, request goal directly not through path planner
-
-        if (adjust_altitude_volume_) {
-            double altitude;
-            if (!adjustAltitudeVolume(current_goal_.pose.position, altitude, min_altitude_,
-                                      max_altitude_)) {
-                RCLCPP_ERROR(this->get_logger(),
-                             "Failed to adjust altitude volume, not publishing goal");
-                return;
-            }
-            current_goal_.pose.position.z = altitude;
-        }
-
-        // Get goal data
-        auto direction_vec =
-            subtractPoints(current_goal_.pose.position, current_pos_.pose.position);
-        double yaw_target = atan2(direction_vec.y, direction_vec.x);
-
-        // Clear path so that we're no longer publishing setpoints on the path
-        path_.clear();
-
-        // Publish goal
-        mavros_msgs::msg::PositionTarget setpoint;
-        setpoint.header.frame_id = mavros_map_frame_;
-        setpoint.header.stamp = this->get_clock()->now();
-        setpoint.position = current_goal_.pose.position;
-        setpoint.yaw = yaw_target;
-        setpoint.coordinate_frame = setpoint.FRAME_LOCAL_NED;
-        setpoint.type_mask |= setpoint.IGNORE_AFX | setpoint.IGNORE_AFY | setpoint.IGNORE_AFZ |
-                              setpoint.IGNORE_VX | setpoint.IGNORE_VY | setpoint.IGNORE_VZ |
-                              setpoint.IGNORE_YAW_RATE;
-
-        RCLCPP_INFO(this->get_logger(), "Path manager publishing MAVROS goal: [%f, %f, %f]",
-                    current_goal_.pose.position.x, current_goal_.pose.position.y,
-                    current_goal_.pose.position.z);
-        mavros_setpoint_raw_pub_->publish(setpoint);
-
-        // Publish setpoint vizualizer (does not include velocity, potential TODO)
-        geometry_msgs::msg::PoseStamped viz_msg;
-        viz_msg.header.stamp = this->get_clock()->now();
-        viz_msg.header.frame_id = mavros_map_frame_;
-        viz_msg.pose.position = setpoint.position;
-        tf2::Quaternion setpoint_q;
-        setpoint_q.setRPY(0.0, 0.0, setpoint.yaw);
-        tf2::convert(setpoint_q, viz_msg.pose.orientation);
-
-        setpoint_viz_pub_->publish(viz_msg);
-    } else {
-
-        if (adjust_altitude_volume_) {
-            double altitude;
-            if (!adjustAltitudeVolume(current_goal_.pose.position, altitude, min_altitude_,
-                                      max_altitude_)) {
-                RCLCPP_ERROR(this->get_logger(),
-                             "Failed to adjust altitude volume, not publishing goal");
-                return;
-            }
-            current_goal_.pose.position.z =
-                altitude; // Adjust the goal altitude based on the volume
-        }
-
-        if (explorable_goals_) {
-            RCLCPP_INFO(this->get_logger(),
-                         "Path manager requesting explorable goal for path planner");
-            geometry_msgs::msg::Pose goal_request = explorer_manager_->makeNewGoal(current_goal_.pose, min_altitude_, max_altitude_);
-            current_goal_.pose = goal_request;
-        }
-
-        // Request path from path planner
-        requestPath(current_goal_);
-    }
-}
-
-bool PathManager::requestPath(const geometry_msgs::msg::PoseStamped goal) {
-
-    // Request path from path planner
-    std::shared_ptr<rclcpp::Node> node = rclcpp::Node::make_shared("request_path_client");
-    rclcpp::Client<messages_88::srv::RequestPath>::SharedPtr client =
-        node->create_client<messages_88::srv::RequestPath>("/path_planner/request_path");
-
-    while (!client->wait_for_service(1s)) {
-        if (!rclcpp::ok()) {
+    if (adjust_altitude_volume_) {
+        double altitude;
+        if (!adjustAltitudeVolume(current_goal_.pose.position, altitude, min_altitude_,
+                                    max_altitude_)) {
             RCLCPP_ERROR(this->get_logger(),
-                         "Interrupted while waiting for path planner service. Exiting.");
-            return false;
+                            "Failed to adjust altitude volume, not publishing goal");
+            return;
         }
-        RCLCPP_INFO(this->get_logger(), "Path planner service not available, waiting again...");
+        current_goal_.pose.position.z =
+            altitude; // Adjust the goal altitude based on the volume
+        RCLCPP_INFO(this->get_logger(), "Setting goal altitude to: %f", altitude);
+        if (!do_slam_) {
+            // Publish goal directly as MAVROS setpoint if not using path planner
+            publishGoalAsMavrosSetpoint(current_goal_);
+        } else {
+            if (explorable_goals_) {
+                RCLCPP_INFO(this->get_logger(),
+                                "Path manager requesting explorable goal for path planner");
+                geometry_msgs::msg::Pose goal_request = explorer_manager_->makeNewGoal(current_goal_.pose, min_altitude_, max_altitude_);
+                current_goal_.pose = goal_request;
+            }
+            // Publish to "/goal" topic which requests path from path planner, which is
+            // received in handlePath
+            publishGoal(current_goal_);
+        }
+    } else {
+        if (!do_slam_) {
+            publishGoalAsMavrosSetpoint(goal);
+        } else {
+            if (explorable_goals_) {
+                RCLCPP_INFO(this->get_logger(),
+                                "Path manager requesting explorable goal for path planner");
+                geometry_msgs::msg::Pose goal_request = explorer_manager_->makeNewGoal(current_goal_.pose, min_altitude_, max_altitude_);
+                current_goal_.pose = goal_request;
+            }
+            publishGoal(goal);
+        }
     }
 
-    auto request = std::make_shared<messages_88::srv::RequestPath::Request>();
-    request->goal = goal;
+    
 
-    RCLCPP_INFO(this->get_logger(), "Path manager requesting PLANNER path for goal: [%f, %f, %f]",
-                goal.pose.position.x, goal.pose.position.y, goal.pose.position.z);
+    // if (adjust_altitude_volume_) {
+    //     // Since this involves a service call, run asynchronously and pass lambda as callback
+    //     // function on service response
+    //     adjustAltitudeVolume(
+    //         goal.pose.position, [this, goal](bool success, double altitude) mutable {
+    //             if (success) {
+    //                 goal.pose.position.z = altitude;
+    //                 RCLCPP_INFO(this->get_logger(), "Setting goal altitude to: %f", altitude);
+    //                 if (!do_slam_) {
+    //                     // Publish goal directly as MAVROS setpoint if not using path planner
+    //                     publishGoalAsMavrosSetpoint(goal);
+    //                 } else {
+    //                     // Publish to "/goal" topic which requests path from path planner, which is
+    //                     // received in handlePath
+    //                     publishGoal(goal);
+    //                 }
+    //             } else {
+    //                 RCLCPP_ERROR(this->get_logger(), "Failed to adjust goal altitude");
+    //             }
+    //         });
+    // } else {
+    //     if (!do_slam_) {
+    //         publishGoalAsMavrosSetpoint(goal);
+    //     } else {
+    //         publishGoal(goal);
+    //     }
+    // }
+}
 
-    // Publish setpoint vizualizer
-    auto direction_vec = subtractPoints(current_goal_.pose.position, current_pos_.pose.position);
+void PathManager::publishGoal(geometry_msgs::msg::PoseStamped &goal) {
+    // Get orientation (just for visualization)
+    auto direction_vec = subtractPoints(goal.pose.position, current_pos_.pose.position);
     double yaw_target = atan2(direction_vec.y, direction_vec.x);
+
+    tf2::Quaternion goal_q;
+    goal_q.setRPY(0.0, 0.0, yaw_target);
+    tf2::convert(goal_q, goal.pose.orientation);
+
+    // Publish goal
+    goal_pub_->publish(goal);
+}
+
+void PathManager::publishGoalAsMavrosSetpoint(const geometry_msgs::msg::PoseStamped &goal) {
+    // Get goal data
+    auto direction_vec = subtractPoints(goal.pose.position, current_pos_.pose.position);
+    double yaw_target = atan2(direction_vec.y, direction_vec.x);
+
+    // Publish goal
+    mavros_msgs::msg::PositionTarget setpoint;
+    setpoint.header.frame_id = mavros_map_frame_;
+    setpoint.header.stamp = this->get_clock()->now();
+    setpoint.position = goal.pose.position;
+    setpoint.yaw = yaw_target;
+    setpoint.coordinate_frame = setpoint.FRAME_LOCAL_NED;
+    setpoint.type_mask |= setpoint.IGNORE_AFX | setpoint.IGNORE_AFY | setpoint.IGNORE_AFZ |
+                          setpoint.IGNORE_VX | setpoint.IGNORE_VY | setpoint.IGNORE_VZ |
+                          setpoint.IGNORE_YAW_RATE;
+
+    RCLCPP_INFO(this->get_logger(), "Path manager publishing MAVROS goal: [%f, %f, %f]",
+                goal.pose.position.x, goal.pose.position.y, goal.pose.position.z);
+    mavros_setpoint_raw_pub_->publish(setpoint);
+
+    // Publish setpoint vizualizer (does not include velocity, potential TODO)
     geometry_msgs::msg::PoseStamped viz_msg;
     viz_msg.header.stamp = this->get_clock()->now();
     viz_msg.header.frame_id = mavros_map_frame_;
-    viz_msg.pose.position = goal.pose.position;
+    viz_msg.pose.position = setpoint.position;
     tf2::Quaternion setpoint_q;
-    setpoint_q.setRPY(0.0, 0.0, yaw_target);
+    setpoint_q.setRPY(0.0, 0.0, setpoint.yaw);
     tf2::convert(setpoint_q, viz_msg.pose.orientation);
 
     setpoint_viz_pub_->publish(viz_msg);
-
-    auto result = client->async_send_request(request);
-    if (rclcpp::spin_until_future_complete(node, result, 10s) ==
-        rclcpp::FutureReturnCode::SUCCESS) {
-        auto res_ptr = result.get();
-        if (res_ptr->success) {
-            return true;
-        } else {
-            RCLCPP_WARN(this->get_logger(), "Path planner failed to create valid path");
-        }
-
-    } else {
-        RCLCPP_ERROR(this->get_logger(), "Failed to call path planner service");
-    }
-
-    return false;
 }
+
+// void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
+//     current_goal_.header.frame_id =
+//         mavros_map_frame_; // Path planner doesn't return headers, it seems
+//     // Determine if open area and path planner is needed
+//     bool open_area = percent_above_ < percent_above_threshold_ && percent_above_ >= 0.0f;
+
+//     if (open_area || !do_slam_) {
+//         // Open area, request goal directly not through path planner
+
+//         if (adjust_altitude_volume_) {
+//             double altitude;
+//             if (!adjustAltitudeVolume(current_goal_.pose.position, altitude, min_altitude_,
+//                                       max_altitude_)) {
+//                 RCLCPP_ERROR(this->get_logger(),
+//                              "Failed to adjust altitude volume, not publishing goal");
+//                 return;
+//             }
+//             current_goal_.pose.position.z = altitude;
+//         }
+
+//         // Get goal data
+//         auto direction_vec =
+//             subtractPoints(current_goal_.pose.position, current_pos_.pose.position);
+//         double yaw_target = atan2(direction_vec.y, direction_vec.x);
+
+//         // Clear path so that we're no longer publishing setpoints on the path
+//         path_.clear();
+
+//         // Publish goal
+//         mavros_msgs::msg::PositionTarget setpoint;
+//         setpoint.header.frame_id = mavros_map_frame_;
+//         setpoint.header.stamp = this->get_clock()->now();
+//         setpoint.position = current_goal_.pose.position;
+//         setpoint.yaw = yaw_target;
+//         setpoint.coordinate_frame = setpoint.FRAME_LOCAL_NED;
+//         setpoint.type_mask |= setpoint.IGNORE_AFX | setpoint.IGNORE_AFY | setpoint.IGNORE_AFZ |
+//                               setpoint.IGNORE_VX | setpoint.IGNORE_VY | setpoint.IGNORE_VZ |
+//                               setpoint.IGNORE_YAW_RATE;
+
+//         RCLCPP_INFO(this->get_logger(), "Path manager publishing MAVROS goal: [%f, %f, %f]",
+//                     current_goal_.pose.position.x, current_goal_.pose.position.y,
+//                     current_goal_.pose.position.z);
+//         mavros_setpoint_raw_pub_->publish(setpoint);
+
+//         // Publish setpoint vizualizer (does not include velocity, potential TODO)
+//         geometry_msgs::msg::PoseStamped viz_msg;
+//         viz_msg.header.stamp = this->get_clock()->now();
+//         viz_msg.header.frame_id = mavros_map_frame_;
+//         viz_msg.pose.position = setpoint.position;
+//         tf2::Quaternion setpoint_q;
+//         setpoint_q.setRPY(0.0, 0.0, setpoint.yaw);
+//         tf2::convert(setpoint_q, viz_msg.pose.orientation);
+
+//         setpoint_viz_pub_->publish(viz_msg);
+//     } else {
+
+//         if (adjust_altitude_volume_) {
+//             double altitude;
+//             if (!adjustAltitudeVolume(current_goal_.pose.position, altitude, min_altitude_,
+//                                       max_altitude_)) {
+//                 RCLCPP_ERROR(this->get_logger(),
+//                              "Failed to adjust altitude volume, not publishing goal");
+//                 return;
+//             }
+//             current_goal_.pose.position.z =
+//                 altitude; // Adjust the goal altitude based on the volume
+//         }
+
+//         if (explorable_goals_) {
+//             RCLCPP_INFO(this->get_logger(),
+//                          "Path manager requesting explorable goal for path planner");
+//             geometry_msgs::msg::Pose goal_request = explorer_manager_->makeNewGoal(current_goal_.pose, min_altitude_, max_altitude_);
+//             current_goal_.pose = goal_request;
+//         }
+
+//         // Request path from path planner
+//         requestPath(current_goal_);
+//     }
+// }
 
 bool PathManager::adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position,
                                        double &target_altitude, double &min_altitude,
@@ -365,37 +441,10 @@ void PathManager::pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg) {
 
     if (goal_init_ && adjust_goal_altitude_) {
         if (adjustGoalAltitude(current_goal_)) {
-            publishGoal(current_goal_);
+            updateGoal(current_goal_);
         }
     }
 }
-
-// Currently unused but may want in future
-/* void PathManager::livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg) {
-
-
-  pcl::PointCloud<pcl::PointXYZ> cloud;
-
-  cloud.header.frame_id = msg->header.frame_id;
-  cloud.header.stamp = msg->header.stamp.toNSec() / 1000; // PCL type stamp is in microseconds
-
-  int plsize = msg->point_num;
-  cloud.reserve(plsize);
-
-  for (unsigned i = 0; i < plsize; i++) {
-    pcl::PointXYZ added_point;
-
-    added_point.x = msg->points[i].x;
-    added_point.y = msg->points[i].y;
-    added_point.z = msg->points[i].z;
-
-    cloud.points.push_back(added_point);
-  }
-
-  cloud_map_ = transformCloudToMapFrame(cloud);
-  if (goal_init_ && adjust_goal_altitude_)
-    adjustGoalAltitude(current_goal_);
-} */
 
 void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
 
@@ -409,7 +458,7 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
         adjustGoalAltitude(current_goal_);
     }
 
-    publishGoal(current_goal_);
+    updateGoal(current_goal_);
 }
 
 std::vector<geometry_msgs::msg::PoseStamped>
@@ -517,7 +566,7 @@ bool PathManager::adjustGoalAltitude(geometry_msgs::msg::PoseStamped goal) {
     return false;
 }
 
-void PathManager::setCurrentPath(const nav_msgs::msg::Path &path) {
+void PathManager::handlePath(const nav_msgs::msg::Path &path) {
 
     std::vector<geometry_msgs::msg::PoseStamped> poses = path.poses;
 
@@ -533,12 +582,9 @@ void PathManager::setCurrentPath(const nav_msgs::msg::Path &path) {
     }
 
     current_setpoint_ = path_[0];
-
-    // Publish first setpoint
-    publishSetpoint(true);
 }
 
-void PathManager::publishSetpoint(bool use_velocity) {
+void PathManager::updateSetpoint(bool use_velocity) {
 
     if (path_.size() == 0) {
         RCLCPP_WARN(this->get_logger(), "No path to publish setpoint");
@@ -586,18 +632,22 @@ void PathManager::publishSetpoint(bool use_velocity) {
         // Determine absolute drone speed, initially set to velocity setpoint speed param
         double speed = velocity_setpoint_speed_;
 
-        // Calculate distance to end of path. As we approach path end (within threshold), reduce
-        // speed using v^2 = u^2 + 2*a*s, with safe estimated acceleration of 2 m/s/s
+        // Calculate distance to end of path. As we approach path end, reduce
+        // speed using v^2 = u^2 + 2*a*s, with safe estimated acceleration of 1 m/s/s
+        // Threshold to begin slowing down
+        // distance = (speed^2)/(2*a)
+        // TODO more advanced jerk and acceleration limiting based on drone dynamics
         double dist_to_end = distance(current_setpoint_, path_.back());
-        double acceleration = 2.0;
-        double threshold =
-            velocity_setpoint_speed_ * velocity_setpoint_speed_ / (2.0 * acceleration);
-        if (dist_to_end < threshold) {
-            speed *= dist_to_end / threshold;
+        double acceleration = 0.5;
+
+        double dist_threshold = speed * speed / (2.0 * acceleration);
+        if (dist_to_end < dist_threshold) {
+            // Calculate new speed
+            speed *= dist_to_end / dist_threshold;
         }
 
-        // If at the end of the path, set speed to 0.
-        if (path_.size() == 0) {
+        // If within acceptance radius, set speed to 0.
+        if (dist_to_end < setpoint_acceptance_radius_) {
             speed = 0.0;
         }
 
