@@ -29,6 +29,7 @@ inline double distance(const geometry_msgs::msg::PoseStamped &a,
 PathManager::PathManager()
     : Node("path_manager"),
       tf_listener_(nullptr),
+      explorer_manager_(nullptr),
       goal_init_(false),
       adjustment_margin_(0.5),
       setpoint_acceptance_radius_(0.5),
@@ -46,7 +47,11 @@ PathManager::PathManager()
       velocity_setpoint_speed_(0.5),
       min_altitude_(3.0),
       max_altitude_(6.0),
-      explorable_goals_(true) {
+      explorable_goals_(true) {}
+
+void PathManager::initialize() {
+    explorer_manager_ = std::make_shared<explorer::Explorer>(this);
+    explorer_manager_->initialize();
 
     // Params
     this->declare_parameter("setpoint_acceptance_radius", setpoint_acceptance_radius_);
@@ -258,46 +263,16 @@ void PathManager::publishGoal(geometry_msgs::msg::PoseStamped goal) {
                 altitude; // Adjust the goal altitude based on the volume
         }
 
-        if (explorable_goals_)
-            current_goal_ = requestExplorableGoal(current_goal_);
+        if (explorable_goals_) {
+            RCLCPP_INFO(this->get_logger(),
+                         "Path manager requesting explorable goal for path planner");
+            geometry_msgs::msg::Pose goal_request = explorer_manager_->makeNewGoal(current_goal_.pose, min_altitude_, max_altitude_);
+            current_goal_.pose = goal_request;
+        }
 
         // Request path from path planner
         requestPath(current_goal_);
     }
-}
-
-geometry_msgs::msg::PoseStamped
-PathManager::requestExplorableGoal(const geometry_msgs::msg::PoseStamped goal) {
-    std::shared_ptr<rclcpp::Node> get_exploregoal_node =
-        rclcpp::Node::make_shared("get_exploregoal_node");
-    auto get_goal_client =
-        get_exploregoal_node->create_client<messages_88::srv::RequestGoal>("/explorable_goal");
-    auto goal_req = std::make_shared<messages_88::srv::RequestGoal::Request>();
-    goal_req->input_goal = goal.pose;
-    goal_req->min_altitude = min_altitude_;
-    goal_req->max_altitude = max_altitude_;
-
-    auto result = get_goal_client->async_send_request(goal_req);
-    geometry_msgs::msg::Pose output_goal;
-    if (rclcpp::spin_until_future_complete(get_exploregoal_node, result, 1s) ==
-        rclcpp::FutureReturnCode::SUCCESS) {
-
-        try {
-            output_goal = result.get()->output_goal;
-            RCLCPP_INFO(this->get_logger(), "Got explore goal");
-        } catch (const std::exception &e) {
-            output_goal = goal.pose;
-            RCLCPP_ERROR(this->get_logger(),
-                         "Failed to get explore goal result, using unmodified goal");
-        }
-
-    } else {
-        output_goal = goal.pose;
-        RCLCPP_ERROR(this->get_logger(), "Failed to get explore goal, using unmodified goal");
-    }
-    geometry_msgs::msg::PoseStamped output = goal;
-    output.pose = output_goal;
-    return output;
 }
 
 bool PathManager::requestPath(const geometry_msgs::msg::PoseStamped goal) {

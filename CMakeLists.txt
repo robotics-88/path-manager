@@ -22,6 +22,7 @@ find_package(pcl_ros REQUIRED)
 find_package(livox_ros_driver2 REQUIRED)
 find_package(PCL REQUIRED)
 find_package(task_manager REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 include_directories(
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -31,6 +32,9 @@ include_directories(
 
 add_library(path_manager SHARED
   src/path_manager.cpp
+  src/decision_maker.cpp
+  src/explorer_manager.cpp
+  src/open_space_finder.cpp
 )
 
 ament_target_dependencies(path_manager
@@ -44,6 +48,7 @@ ament_target_dependencies(path_manager
   tf2_geometry_msgs
   livox_ros_driver2
   task_manager
+  visualization_msgs
 )
 
 

@@ -24,6 +24,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
 
+#include <explorer/explorer_manager.h>
+
 namespace path_manager {
 /**
  * @class PathManager
@@ -35,11 +37,15 @@ class PathManager : public rclcpp::Node {
     PathManager();
     ~PathManager();
 
+    void initialize();
+
   private:
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
     std::string mavros_map_frame_;
+
+    std::shared_ptr<explorer::Explorer> explorer_manager_;
 
     double setpoint_acceptance_radius_;
     double goal_acceptance_radius_;
@@ -93,7 +99,6 @@ class PathManager : public rclcpp::Node {
     void percentAboveCallback(const std_msgs::msg::Float32 &msg);
     void positionCallback(const geometry_msgs::msg::PoseStamped &msg);
     void pointCloudCallback(const sensor_msgs::msg::PointCloud2 &msg);
-    // void livoxPointCloudCallback(const livox_ros_driver::CustomMsg::ConstPtr &msg);
     void rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg);
 
     void setCurrentPath(const nav_msgs::msg::Path &path);
@@ -109,8 +114,6 @@ class PathManager : public rclcpp::Node {
     bool isCloserThanSetpoint();
     bool adjustGoalAltitude(geometry_msgs::msg::PoseStamped goal);
     void publishGoal(geometry_msgs::msg::PoseStamped goal);
-    geometry_msgs::msg::PoseStamped
-    requestExplorableGoal(const geometry_msgs::msg::PoseStamped goal);
     bool requestPath(const geometry_msgs::msg::PoseStamped goal);
     bool adjustAltitudeVolume(const geometry_msgs::msg::Point &map_position,
                               double &target_altitude, double &min_altitude, double &max_altitude);
