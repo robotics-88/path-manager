@@ -43,6 +43,9 @@ class PathManager : public rclcpp::Node {
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
+    bool canceling_;
+    geometry_msgs::msg::PoseStamped home_pos_;
+
     std::string mavros_map_frame_;
 
     std::shared_ptr<explorer::Explorer> explorer_manager_;
@@ -86,12 +89,15 @@ class PathManager : public rclcpp::Node {
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr raw_goal_sub_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr clicked_goal_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr cancel_sub_;
 
     rclcpp::Publisher<mavros_msgs::msg::PositionTarget>::SharedPtr mavros_setpoint_raw_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr setpoint_viz_pub_;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr actual_path_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pub_;
 
+
+    void cancelCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg);
     void checkAndUpdateGoal();
     void checkAndUpdateSetpoint();
 

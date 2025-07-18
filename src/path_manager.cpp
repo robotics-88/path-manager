@@ -42,6 +42,7 @@ template <typename P1, typename P2> P1 subtractPoints(const P1 &p1, const P2 &p2
 PathManager::PathManager()
     : Node("path_manager"),
       tf_listener_(nullptr),
+      canceling_(false),
       explorer_manager_(nullptr),
       goal_init_(false),
       adjustment_margin_(0.5),
@@ -115,6 +116,8 @@ void PathManager::initialize() {
         raw_goal_topic, 10, std::bind(&PathManager::rawGoalCallback, this, _1));
     clicked_goal_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
         "/goal_pose", 10, std::bind(&PathManager::rawGoalCallback, this, _1));
+    cancel_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+        "/path_manager/cancel", 10, std::bind(&PathManager::cancelCallback, this, _1));
 
     // Publishers
     mavros_setpoint_raw_pub_ = this->create_publisher<mavros_msgs::msg::PositionTarget>(
@@ -142,6 +145,23 @@ void PathManager::positionCallback(const geometry_msgs::msg::PoseStamped &msg) {
     checkAndUpdateSetpoint();
 }
 
+void PathManager::cancelCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
+    if (msg->header.frame_id != mavros_map_frame_) {
+        canceling_ = false;
+        RCLCPP_WARN(this->get_logger(), "PathManager un-canceling.");
+        return;
+    }
+    RCLCPP_INFO(this->get_logger(), "PathManager received cancel request");
+    home_pos_ = *msg;
+    sub_goals_.clear();
+    path_.clear();
+    current_goal_ = geometry_msgs::msg::PoseStamped();
+    current_setpoint_ = geometry_msgs::msg::PoseStamped();
+    actual_path_.poses.clear();
+    actual_path_pub_->publish(actual_path_);
+    canceling_ = true;
+    RCLCPP_INFO(this->get_logger(), "PathManager canceled all goals and path.");
+}
 
 void PathManager::checkAndUpdateGoal() {
     // Publish next goal when we have reached current one
@@ -341,6 +361,16 @@ void PathManager::rawGoalCallback(const geometry_msgs::msg::PoseStamped &msg) {
     RCLCPP_INFO(this->get_logger(), "Received raw goal [%f, %f, %f]", msg.pose.position.x,
                 msg.pose.position.y, msg.pose.position.z);
 
+    if (canceling_) {
+        // Only allow raw goal if it is home pos
+        if (!(msg.pose.position.x == home_pos_.pose.position.x &&
+              msg.pose.position.y == home_pos_.pose.position.y &&
+              msg.pose.position.z == home_pos_.pose.position.z)) {
+            RCLCPP_WARN(this->get_logger(), "PathManager is canceling, ignoring raw goal other than home.");
+            return;
+        }
+    }
+    
     sub_goals_ = segmentGoal(msg);
     current_goal_ = sub_goals_.at(0);
 
