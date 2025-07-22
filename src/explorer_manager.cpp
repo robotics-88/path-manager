@@ -381,4 +381,4 @@ void Explorer::visualizeGoal(decision_maker::NavOption& option){
   marker_goal_publisher_->publish(goal_marker);
 }
 
-}  // namespace explorerr
+}  // namespace explorer
