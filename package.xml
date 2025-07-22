@@ -13,7 +13,7 @@
   <!-- One license tag required, multiple allowed, one license per tag -->
   <!-- Commonly used license strings: -->
   <!--   BSD, MIT, Boost Software License, GPLv2, GPLv3, LGPLv2.1, LGPLv3 -->
-  <license>commercial</license>
+  <license>GPLv3</license>
 
 
   <buildtool_depend>ament_cmake</buildtool_depend>
@@ -29,6 +29,7 @@
   <depend>tf2_ros</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>livox_ros_driver2</depend>
+  <depend>visualization_msgs</depend>
 
   <exec_depend>ros2launch</exec_depend>
 
