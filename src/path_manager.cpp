@@ -10,6 +10,8 @@ Author: Erin Linebarger <erin@robotics88.com>
 
 using std::placeholders::_1;
 
+const double SAFE_ACCELERATION = 0.5; // TODO make this a launch arg?
+
 using namespace std::chrono_literals;
 
 namespace path_manager {
@@ -558,7 +560,7 @@ void PathManager::updateSetpoint(bool use_velocity) {
         // distance = (speed^2)/(2*a)
         // TODO more advanced jerk and acceleration limiting based on drone dynamics
         double dist_to_end = distance(current_setpoint_, path_.back());
-        double acceleration = 0.5;
+        double acceleration = SAFE_ACCELERATION;
 
         double dist_threshold = speed * speed / (2.0 * acceleration);
         if (dist_to_end < dist_threshold) {
