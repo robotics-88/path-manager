@@ -67,7 +67,6 @@ private:
   std::string slam_pose_topic_;
 
   float map_resolution_;
-\
   float max_altitude_;
   float min_altitude_;
 
