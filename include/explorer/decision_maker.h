@@ -20,7 +20,7 @@ struct NavOption {
   double size;         // Size of the voxel
   geometry_msgs::msg::Point location; // Location of the option
   double safety;      // Safety score
-  double cost;        // Overall cost for this option
+  double utility;        // Overall utility for this option
 };
 
 enum Criteria {

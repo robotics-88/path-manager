@@ -228,7 +228,7 @@ void Explorer::visualizeOptions(
   m.frame_locked = true;
 
   // weighted options are always sorted
-  double min_cost = options.empty() ? 0. : options.front().cost;
+  double max_utility = options.empty() ? 1. : options.front().utility;
 
   m.action = visualization_msgs::msg::Marker::ADD;
   size_t id = 0;
@@ -237,8 +237,8 @@ void Explorer::visualizeOptions(
     m.id = int(id);
     m.pose.position = option.location;
     m.pose.orientation.w = 1.0;
-    // TODO harcode or scale option according to its cost (costlier options will be smaller)?
-    double scale = 0.5;// std::max(std::abs(min_cost * 3.0 / option.cost), 3.5);
+    // TODO harcode or scale option according to its utility (costlier options will be smaller)?
+    double scale = 0.5;// std::max(std::abs(max_utility * 3.0 / option.utility), 3.5);
     if (isinf(scale)) scale = 10.0;
     if (isnan(scale)) scale = 1.0;
     if (scale < 1.0) scale = 1.0;
@@ -289,7 +289,7 @@ geometry_msgs::msg::Pose Explorer::makeNewGoal(const geometry_msgs::msg::Pose &p
     return position; // Not what we want but leaving for testing
   }
 
-  // Fill in option cost
+  // Fill in option score
   decision_maker_->evaluate(options, prev_goal_);
 
   // publish options as visualization markers

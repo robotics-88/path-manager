@@ -37,16 +37,17 @@ void DecisionMaker::init(const double res, const std::vector<std::string> criter
 
 void DecisionMaker::evaluate(std::vector<NavOption> &option_list, const geometry_msgs::msg::Point prev_goal) {
   prev_goal_ = prev_goal;
-  // // set costs of options
+  // set utilities of options
   std::vector<double> scores(num_criteria_,0);
   for (auto& option : option_list) {
     scores = optionScore(option);
-    option.cost = weightedAverage(weights_, scores);
+    option.utility = weightedAverage(weights_, scores);
   }
 
+  // sort options by utility, high score first
   std::sort(
       option_list.begin(), option_list.end(),
-      [](const NavOption& no1, const NavOption& no2) { return no1.cost < no2.cost; });
+      [](const NavOption& no1, const NavOption& no2) { return no1.utility > no2.utility; });
 }
 
 double DecisionMaker::weightedAverage(std::vector<double>& wt, std::vector<double>& scores) {
@@ -74,23 +75,23 @@ std::vector<double> DecisionMaker::optionScore(const NavOption& option)
 }
 
 double DecisionMaker::utilityFunction(decision_maker::Criteria criteria, const NavOption& option) {
-  // All utility functions must be written so that smaller scores are better, for consistency
+  // All utility functions must be written so that larger scores are better, for consistency
   switch (criteria) {
     case DIST:
-      return (option.min_distance * map_resolution_);
+      return 1 / (option.min_distance * map_resolution_);
       break;
     case INFO:
-      return 1 / (option.size * map_resolution_);
+      return (option.size * map_resolution_);
       break;
     case EFFICIENCY:
-      return sqrt(pow(option.location.x - prev_goal_.x, 2) + pow(option.location.y - prev_goal_.y, 2));
+      return 1 / sqrt(pow(option.location.x - prev_goal_.x, 2) + pow(option.location.y - prev_goal_.y, 2));
       break;
     case SAFETY:
-      return option.safety;
+      return 1 / option.safety;
       break;
     case ASH:
     //   return valleyScore(option.midpoint);
-      return 0.0; // Placeholder for ASH utility, needs reimplementation
+      return 0.0; // Placeholder for ASH utility, needs reimplementation now that DEM moved
       break;
     default:
       return -1.0;
