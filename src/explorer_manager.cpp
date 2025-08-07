@@ -85,7 +85,6 @@ void Explorer::initialize() {
   prev_goal_.x = 0;
   prev_goal_.y = 0;
   prev_goal_.z = 0;
-  option_blacklist_.push_back(prev_goal_); // Origin is never a good target, but sometimes gets stuck
   decision_maker_->init( map_resolution_, criteria, weights);
 
   if (visualize_) {

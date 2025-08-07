@@ -245,7 +245,10 @@ void PathManager::updateGoal(geometry_msgs::msg::PoseStamped goal) {
             // Publish goal directly as MAVROS setpoint if not using path planner
             publishGoalAsMavrosSetpoint(current_goal_);
         } else {
-            if (explorable_goals_) {
+            if (explorable_goals_ && 
+                (goal.pose.position.x != home_pos_.pose.position.x ||
+                 goal.pose.position.y != home_pos_.pose.position.y ||
+                 goal.pose.position.z != home_pos_.pose.position.z)) {
                 RCLCPP_INFO(this->get_logger(),
                                 "Path manager requesting explorable goal for path planner");
                 geometry_msgs::msg::Pose goal_request = explorer_manager_->makeNewGoal(current_goal_.pose, min_altitude_, max_altitude_);
@@ -259,7 +262,10 @@ void PathManager::updateGoal(geometry_msgs::msg::PoseStamped goal) {
         if (!do_slam_) {
             publishGoalAsMavrosSetpoint(goal);
         } else {
-            if (explorable_goals_) {
+            if (explorable_goals_ && 
+                (goal.pose.position.x != home_pos_.pose.position.x ||
+                 goal.pose.position.y != home_pos_.pose.position.y ||
+                 goal.pose.position.z != home_pos_.pose.position.z)) {
                 RCLCPP_INFO(this->get_logger(),
                                 "Path manager requesting explorable goal for path planner");
                 geometry_msgs::msg::Pose goal_request = explorer_manager_->makeNewGoal(current_goal_.pose, min_altitude_, max_altitude_);
